@@ -1,10 +1,10 @@
 {
-  "name": "amqp-ts",
-  "version": "1.7.0",
+  "name": "@droidsolutions-oss/amqp-ts",
+  "version": "0.9.0",
   "description": "Easy to use AMQP library written in Typescript (using amqplib).",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/abreits/amqp-ts"
+    "url": "git@github.com:droidsolutions/amqp-ts.git"
   },
   "keywords": [
     "amqp",
@@ -27,6 +27,10 @@
     "winston": "^2.2.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "^8.3.5",
+    "@commitlint/config-conventional": "^8.3.4",
+    "@semantic-release/changelog": "^5.0.1",
+    "@semantic-release/git": "^9.0.0",
     "@types/mocha": "^5.2.7",
     "chai": "^3.5.0",
     "del": "^2.2.0",
@@ -37,11 +41,39 @@
     "gulp-sourcemaps": "^1.6.0",
     "gulp-tslint": "^8.1.4",
     "gulp-typescript": "^5.0.1",
+    "husky": "^4.2.3",
     "line-reader": "^0.3.1",
     "merge2": "^0.3.7",
     "mocha": "^6.2.0",
+    "semantic-release": "^17.0.4",
     "source-map-support": "^0.3.3",
     "tslint": "^5.19.0",
     "typescript": "^3.5.3"
+  },
+  "contributors": [
+    {
+      "email": "stefan.issmer@droidsolutions.de",
+      "name": "Stefan Ißmer"
+    }
+  ],
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "commit-msg": "commitlint -e $HUSKY_GIT_PARAMS"
+    }
+  },
+  "release": {
+    "plugins": [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      "@semantic-release/changelog",
+      "@semantic-release/npm",
+      "@semantic-release/github",
+      "@semantic-release/git"
+    ]
   }
 }
