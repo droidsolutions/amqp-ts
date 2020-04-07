@@ -9,13 +9,6 @@ on:
   pull_request:
     branches: [ master ]
 
-services:
-  rabbitmq:
-    image: rabbitmq:latest
-    ports:
-      - 5672/tcp
-    options: --health-cmd "rabbitmqctl node_health_check" --health-interval 10s --health-timeout 5s --health-retries 5
-      
 jobs:
   lint:
    name: Check - Lint
@@ -46,6 +39,12 @@ jobs:
   test:
     name: Coverage
     runs-on: [ubuntu-latest]
+    services:
+      rabbitmq:
+        image: rabbitmq:latest
+        ports:
+          - 5672/tcp
+        options: --health-cmd "rabbitmqctl node_health_check" --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v2
       - name: Use Node.js
@@ -53,7 +52,7 @@ jobs:
       - run: npm ci
       - run: npx mocha transpiled/*.spec.js
     env:
-      AMQPTEST_CONNECTION_URL: amqp://localhost:${{ job.services.rabbitmq.ports[5672] }}
+      AMQPTEST_CONNECTION_URL: amqp://localhost:5672
 
   release:
     name: Semantic Release
