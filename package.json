@@ -17,7 +17,7 @@
   "typings": "lib/amqp-ts.d.ts",
   "scripts": {
     "docker-develop": "npm install && node tools/alive",
-    "lint": "tslint -r tools/tslint/tslint-node.json",
+    "lint": "tslint -r tools/tslint/tslint-node.json src/*.ts",
     "test": "gulp test",
     "test-integration": "gulp test:integration"
   },
