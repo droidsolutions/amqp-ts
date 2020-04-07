@@ -53,7 +53,7 @@ jobs:
       - run: gulp build
       - run: npx mocha transpiled/*.spec.js
     env:
-      AMQPTEST_CONNECTION_URL: amqp://localhost:5672
+      AMQPTEST_CONNECTION_URL: amqp://localhost:${{ job.services.rabbitmq.ports['5672'] }}
 
   release:
     name: Semantic Release
