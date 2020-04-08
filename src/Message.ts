@@ -28,23 +28,24 @@ export class Message {
     }
   }
   getContent(): any {
-    var content = this.content.toString();
+    let content = this.content.toString();
     if (this.properties.contentType === "application/json") {
       content = JSON.parse(content);
     }
     return content;
   }
-  sendTo(destination: Exchange | Queue, routingKey: string = ""): void {
+  sendTo(destination: Exchange | Queue, routingKey = ""): void {
+    let exchange: string;
     // inline function to send the message
-    var sendMessage = () => {
+    const sendMessage = (): void => {
       try {
         destination._channel.publish(exchange, routingKey, this.content, this.properties);
       } catch (err) {
         log.log("debug", "Publish error: " + err.message, {
           module: "amqp-ts",
         });
-        var destinationName = destination._name;
-        var connection = destination._connection;
+        const destinationName = destination._name;
+        const connection = destination._connection;
         log.log("debug", "Try to rebuild connection, before Call.", {
           module: "amqp-ts",
         });
@@ -58,7 +59,6 @@ export class Message {
         });
       }
     };
-    var exchange: string;
     if (destination instanceof Queue) {
       exchange = "";
       routingKey = destination._name;

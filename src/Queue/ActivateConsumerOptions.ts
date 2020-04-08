@@ -5,5 +5,5 @@ export interface ActivateConsumerOptions {
   manualAck?: boolean;
   exclusive?: boolean;
   priority?: number;
-  arguments?: Object;
+  arguments?: object;
 }

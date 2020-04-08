@@ -12,7 +12,7 @@ import { ActivateConsumerOptions } from "../Queue/ActivateConsumerOptions";
 export class Exchange {
   initialized: Promise<InitializeResult>;
   _consumer_handlers: Array<[string, any]> = new Array<[string, any]>();
-  _isConsumerInitializedRcp: boolean = false;
+  _isConsumerInitializedRcp = false;
   _connection: Connection;
   _channel: AmqpLib.Channel;
   _name: string;
@@ -20,10 +20,10 @@ export class Exchange {
   _options: DeclarationOptions;
   _deleting: Promise<void>;
   _closing: Promise<void>;
-  get name() {
+  get name(): string {
     return this._name;
   }
-  get type() {
+  get type(): string {
     return this._type;
   }
   constructor(connection: Connection, name: string, type?: string, options: DeclarationOptions = {}) {
@@ -33,7 +33,7 @@ export class Exchange {
     this._options = options;
     this._initialize();
   }
-  _initialize() {
+  _initialize(): void {
     this.initialized = new Promise<InitializeResult>((resolve, reject) => {
       this._connection.initialized
         .then(() => {
@@ -43,14 +43,14 @@ export class Exchange {
               reject(err);
             } else {
               this._channel = channel;
-              let callback = (err, ok) => {
+              const callback = (err: Error, ok: InitializeResult): void => {
                 /* istanbul ignore if */
                 if (err) {
                   log.log("error", "Failed to create exchange '" + this._name + "'.", { module: "amqp-ts" });
                   delete this._connection._exchanges[this._name];
                   reject(err);
                 } else {
-                  resolve(<InitializeResult>ok);
+                  resolve(ok);
                 }
               };
               if (this._options.noCreate) {
@@ -59,14 +59,14 @@ export class Exchange {
                 this._channel.assertExchange(
                   this._name,
                   this._type,
-                  <AmqpLib.Options.AssertExchange>this._options,
+                  this._options as AmqpLib.Options.AssertExchange,
                   callback,
                 );
               }
             }
           });
         })
-        .catch((err) => {
+        .catch((_err) => {
           log.log("warn", "Channel failure, error caused during connection!", {
             module: "amqp-ts",
           });
@@ -91,8 +91,8 @@ export class Exchange {
         log.log("warn", "Exchange publish error: " + err.message, {
           module: "amqp-ts",
         });
-        var exchangeName = this._name;
-        var connection = this._connection;
+        const exchangeName = this._name;
+        const connection = this._connection;
         connection._rebuildAll(err).then(() => {
           log.log("debug", "Retransmitting message.", { module: "amqp-ts" });
           connection._exchanges[exchangeName].publish(content, routingKey, options);
@@ -108,25 +108,25 @@ export class Exchange {
       function generateUuid(): string {
         return Math.random().toString() + Math.random().toString() + Math.random().toString();
       }
-      var processRpc = () => {
-        var uuid: string = generateUuid();
+      const processRpc = (): void => {
+        const uuid: string = generateUuid();
         if (!this._isConsumerInitializedRcp) {
           this._isConsumerInitializedRcp = true;
           this._channel.consume(
             DIRECT_REPLY_TO_QUEUE,
             (resultMsg) => {
-              var result = new Message(resultMsg.content, resultMsg.fields);
+              const result = new Message(resultMsg.content, resultMsg.fields);
               result.fields = resultMsg.fields;
-              for (let handler of this._consumer_handlers) {
+              for (const handler of this._consumer_handlers) {
                 if (handler[0] === resultMsg.properties.correlationId) {
-                  let func: Function = handler[1];
+                  const func: Function = handler[1];
                   func.apply("", [undefined, result]);
                 }
               }
               resolve(result);
             },
             { noAck: true },
-            (err, ok) => {
+            (err, _ok) => {
               /* istanbul ignore if */
               if (err) {
                 reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
@@ -136,7 +136,7 @@ export class Exchange {
                   this._consumer_handlers.push([uuid, callback]);
                 }
                 // consumerTag = ok.consumerTag;
-                var message = new Message(requestParameters, {
+                const message = new Message(requestParameters, {
                   correlationId: uuid,
                   replyTo: DIRECT_REPLY_TO_QUEUE,
                 });
@@ -146,7 +146,7 @@ export class Exchange {
           );
         } else {
           this._consumer_handlers.push([uuid, callback]);
-          var message = new Message(requestParameters, {
+          const message = new Message(requestParameters, {
             correlationId: uuid,
             replyTo: DIRECT_REPLY_TO_QUEUE,
           });
@@ -166,7 +166,7 @@ export class Exchange {
             return Binding.removeBindingsContaining(this);
           })
           .then(() => {
-            this._channel.deleteExchange(this._name, {}, (err, ok) => {
+            this._channel.deleteExchange(this._name, {}, (err, _ok) => {
               /* istanbul ignore if */
               if (err) {
                 reject(err);
@@ -222,10 +222,10 @@ export class Exchange {
     return this._closing;
   }
   bind(source: Exchange, pattern = "", args: any = {}): Promise<Binding> {
-    var binding = new Binding(this, source, pattern, args);
+    const binding = new Binding(this, source, pattern, args);
     return binding.initialized;
   }
-  unbind(source: Exchange, pattern = "", args: any = {}): Promise<void> {
+  unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
     return this._connection._bindings[Binding.id(this, source, pattern)].delete();
   }
   consumerQueueName(): string {
@@ -235,41 +235,41 @@ export class Exchange {
    * deprecated, use 'exchange.activateConsumer(...)' instead
    */
   startConsumer(onMessage: (msg: any, channel?: AmqpLib.Channel) => any, options?: StartConsumerOptions): Promise<any> {
-    var queueName = this.consumerQueueName();
+    const queueName = this.consumerQueueName();
     if (this._connection._queues[queueName]) {
       return new Promise<void>((_, reject) => {
         reject(new Error("amqp-ts Exchange.startConsumer error: consumer already defined"));
       });
     } else {
-      var promises: Promise<any>[] = [];
-      var queue = this._connection.declareQueue(queueName, { durable: false });
+      const promises: Promise<any>[] = [];
+      const queue = this._connection.declareQueue(queueName, { durable: false });
       promises.push(queue.initialized);
-      var binding = queue.bind(this);
+      const binding = queue.bind(this);
       promises.push(binding);
-      var consumer = queue.startConsumer(onMessage, options);
+      const consumer = queue.startConsumer(onMessage, options);
       promises.push(consumer);
       return Promise.all(promises);
     }
   }
   activateConsumer(onMessage: (msg: Message) => any, options?: ActivateConsumerOptions): Promise<any> {
-    var queueName = this.consumerQueueName();
+    const queueName = this.consumerQueueName();
     if (this._connection._queues[queueName]) {
       return new Promise<void>((_, reject) => {
         reject(new Error("amqp-ts Exchange.activateConsumer error: consumer already defined"));
       });
     } else {
-      var promises: Promise<any>[] = [];
-      var queue = this._connection.declareQueue(queueName, { durable: false });
+      const promises: Promise<any>[] = [];
+      const queue = this._connection.declareQueue(queueName, { durable: false });
       promises.push(queue.initialized);
-      var binding = queue.bind(this);
+      const binding = queue.bind(this);
       promises.push(binding);
-      var consumer = queue.activateConsumer(onMessage, options);
+      const consumer = queue.activateConsumer(onMessage, options);
       promises.push(consumer);
       return Promise.all(promises);
     }
   }
   stopConsumer(): Promise<any> {
-    var queue = this._connection._queues[this.consumerQueueName()];
+    const queue = this._connection._queues[this.consumerQueueName()];
     if (queue) {
       return queue.delete();
     } else {

@@ -19,14 +19,14 @@ export class Binding {
   _initialize(): void {
     this.initialized = new Promise<Binding>((resolve, reject) => {
       if (this._destination instanceof Queue) {
-        var queue = <Queue>this._destination;
+        const queue = this._destination;
         queue.initialized.then(() => {
           queue._channel.bindQueue(
             this._destination._name,
             this._source._name,
             this._pattern,
             this._args,
-            (err, ok) => {
+            (err, _ok) => {
               /* istanbul ignore if */
               if (err) {
                 log.log(
@@ -45,14 +45,14 @@ export class Binding {
           );
         });
       } else {
-        var exchange = <Exchange>this._destination;
+        const exchange = this._destination;
         exchange.initialized.then(() => {
           exchange._channel.bindExchange(
             this._destination._name,
             this._source._name,
             this._pattern,
             this._args,
-            (err, ok) => {
+            (err, _ok) => {
               /* istanbul ignore if */
               if (err) {
                 log.log(
@@ -76,14 +76,14 @@ export class Binding {
   delete(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (this._destination instanceof Queue) {
-        var queue = <Queue>this._destination;
+        const queue = this._destination;
         queue.initialized.then(() => {
           queue._channel.unbindQueue(
             this._destination._name,
             this._source._name,
             this._pattern,
             this._args,
-            (err, ok) => {
+            (err, _ok) => {
               /* istanbul ignore if */
               if (err) {
                 reject(err);
@@ -97,14 +97,14 @@ export class Binding {
           );
         });
       } else {
-        var exchange = <Exchange>this._destination;
+        const exchange = this._destination;
         exchange.initialized.then(() => {
           exchange._channel.unbindExchange(
             this._destination._name,
             this._source._name,
             this._pattern,
             this._args,
-            (err, ok) => {
+            (err, _ok) => {
               /* istanbul ignore if */
               if (err) {
                 reject(err);
@@ -134,10 +134,10 @@ export class Binding {
     );
   }
   static removeBindingsContaining(connectionPoint: Exchange | Queue): Promise<any> {
-    var connection = connectionPoint._connection;
-    var promises: Promise<void>[] = [];
-    for (var bindingId in connection._bindings) {
-      var binding: Binding = connection._bindings[bindingId];
+    const connection = connectionPoint._connection;
+    const promises: Promise<void>[] = [];
+    for (const bindingId in connection._bindings) {
+      const binding: Binding = connection._bindings[bindingId];
       if (binding._source === connectionPoint || binding._destination === connectionPoint) {
         promises.push(binding.delete());
       }

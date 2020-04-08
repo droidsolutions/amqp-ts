@@ -11,19 +11,19 @@
 import * as winston from "winston";
 import * as path from "path";
 
-export var ApplicationName =
+export const ApplicationName =
   process.env.AMQPTS_APPLICATIONNAME ||
   (path.parse ? path.parse(process.argv[1]).name : path.basename(process.argv[1]));
 
 // create a custom winston logger for amqp-ts
-var amqp_log = new winston.Logger({
+const amqpLog = new winston.Logger({
   transports: [
     new winston.transports.Console({
       level: process.env.AMQPTS_LOGLEVEL || "error",
     }),
   ],
 });
-export var log = amqp_log;
+export const log = amqpLog;
 
 // name for the RabbitMQ direct reply-to queue
 export const DIRECT_REPLY_TO_QUEUE = "amq.rabbitmq.reply-to";

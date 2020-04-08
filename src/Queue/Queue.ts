@@ -26,7 +26,7 @@ export class Queue {
   _consumerStopping: boolean;
   _deleting: Promise<DeleteResult>;
   _closing: Promise<void>;
-  get name() {
+  get name(): string {
     return this._name;
   }
   constructor(connection: Connection, name: string, options: DeclarationOptions = {}) {
@@ -46,7 +46,7 @@ export class Queue {
               reject(err);
             } else {
               this._channel = channel;
-              let callback = (err, ok) => {
+              const callback = (err: Error, ok: InitializeResult): void => {
                 /* istanbul ignore if */
                 if (err) {
                   log.log("error", "Failed to create queue '" + this._name + "'.", { module: "amqp-ts" });
@@ -56,18 +56,18 @@ export class Queue {
                   if (this._options.prefetch) {
                     this._channel.prefetch(this._options.prefetch);
                   }
-                  resolve(<InitializeResult>ok);
+                  resolve(ok);
                 }
               };
               if (this._options.noCreate) {
                 this._channel.checkQueue(this._name, callback);
               } else {
-                this._channel.assertQueue(this._name, <AmqpLib.Options.AssertQueue>this._options, callback);
+                this._channel.assertQueue(this._name, this._options as AmqpLib.Options.AssertQueue, callback);
               }
             }
           });
         })
-        .catch((err) => {
+        .catch((_err) => {
           log.log("warn", "Channel failure, error caused during connection!", {
             module: "amqp-ts",
           });
@@ -84,7 +84,7 @@ export class Queue {
     return content;
   }
   static _unpackMessageContent(msg: AmqpLib.Message): any {
-    var content = msg.content.toString();
+    let content = msg.content.toString();
     if (msg.properties.contentType === "application/json") {
       content = JSON.parse(content);
     }
@@ -95,15 +95,15 @@ export class Queue {
    */
   publish(content: any, options: any = {}): void {
     // inline function to send the message
-    var sendMessage = () => {
+    const sendMessage = (): void => {
       try {
         this._channel.sendToQueue(this._name, content, options);
       } catch (err) {
         log.log("debug", "Queue publish error: " + err.message, {
           module: "amqp-ts",
         });
-        var queueName = this._name;
-        var connection = this._connection;
+        const queueName = this._name;
+        const connection = this._connection;
         log.log("debug", "Try to rebuild connection, before Call.", {
           module: "amqp-ts",
         });
@@ -122,13 +122,13 @@ export class Queue {
   }
   rpc(requestParameters: any): Promise<Message> {
     return new Promise<Message>((resolve, reject) => {
-      var processRpc = () => {
-        var consumerTag: string;
+      const processRpc = (): void => {
+        let consumerTag: string;
         this._channel.consume(
           DIRECT_REPLY_TO_QUEUE,
           (resultMsg) => {
             this._channel.cancel(consumerTag);
-            var result = new Message(resultMsg.content, resultMsg.fields);
+            const result = new Message(resultMsg.content, resultMsg.fields);
             result.fields = resultMsg.fields;
             resolve(result);
           },
@@ -140,7 +140,7 @@ export class Queue {
             } else {
               // send the rpc request
               consumerTag = ok.consumerTag;
-              var message = new Message(requestParameters, {
+              const message = new Message(requestParameters, {
                 replyTo: DIRECT_REPLY_TO_QUEUE,
               });
               message.sendTo(this);
@@ -160,7 +160,7 @@ export class Queue {
   recover(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.initialized.then(() => {
-        this._channel.recover((err, ok) => {
+        this._channel.recover((err, _ok) => {
           if (err) {
             reject(err);
           } else {
@@ -205,20 +205,20 @@ export class Queue {
     return this._consumerInitialized;
   }
   _initializeConsumer(): void {
-    var processedMsgConsumer = (msg: AmqpLib.Message) => {
+    const processedMsgConsumer = (msg: AmqpLib.Message): void => {
       try {
         /* istanbul ignore if */
         if (!msg) {
           return; // ignore empty messages (for now)
         }
-        var payload = Queue._unpackMessageContent(msg);
-        var result = this._consumer(payload);
+        const payload = Queue._unpackMessageContent(msg);
+        const result = this._consumer(payload);
         // convert the result to a promise if it isn't one already
         Promise.resolve(result)
           .then((resultValue) => {
             // check if there is a reply-to
             if (msg.properties.replyTo) {
-              var options: any = {};
+              const options: any = {};
               resultValue = Queue._packMessageContent(resultValue, options);
               this._channel.sendToQueue(msg.properties.replyTo, resultValue, options);
             }
@@ -235,7 +235,7 @@ export class Queue {
         log.log("error", "Queue.onMessage consumer function returned error: " + err.message, { module: "amqp-ts" });
       }
     };
-    var rawMsgConsumer = (msg: AmqpLib.Message) => {
+    const rawMsgConsumer = (msg: AmqpLib.Message): void => {
       try {
         this._consumer(msg, this._channel);
       } catch (err) {
@@ -243,13 +243,13 @@ export class Queue {
         log.log("error", "Queue.onMessage consumer function returned error: " + err.message, { module: "amqp-ts" });
       }
     };
-    var activateConsumerWrapper = (msg: AmqpLib.Message) => {
+    const activateConsumerWrapper = (msg: AmqpLib.Message): void => {
       try {
-        var message = new Message(msg.content, msg.properties);
+        const message = new Message(msg.content, msg.properties);
         message.fields = msg.fields;
         message._message = msg;
         message._channel = this._channel;
-        var result = this._consumer(message);
+        const result = this._consumer(message);
         // convert the result to a promise if it isn't one already
         Promise.resolve(result)
           .then((resultValue) => {
@@ -272,14 +272,14 @@ export class Queue {
     };
     this._consumerInitialized = new Promise<StartConsumerResult>((resolve, reject) => {
       this.initialized.then(() => {
-        var consumerFunction = activateConsumerWrapper;
+        let consumerFunction = activateConsumerWrapper;
         if (this._isStartConsumer) {
           consumerFunction = this._rawConsumer ? rawMsgConsumer : processedMsgConsumer;
         }
         this._channel.consume(
           this._name,
           consumerFunction,
-          <AmqpLib.Options.Consume>this._consumerOptions,
+          this._consumerOptions as AmqpLib.Options.Consume,
           (err, ok) => {
             /* istanbul ignore if */
             if (err) {
@@ -293,14 +293,14 @@ export class Queue {
       });
     });
   }
-  stopConsumer(): Promise<void> {
-    if (!this._consumerInitialized || this._consumerStopping) {
+  async stopConsumer(): Promise<void> {
+    if (this._consumerStopping || !(await this._consumerInitialized)) {
       return Promise.resolve();
     }
     this._consumerStopping = true;
     return new Promise<void>((resolve, reject) => {
       this._consumerInitialized.then(() => {
-        this._channel.cancel(this._consumerTag, (err, ok) => {
+        this._channel.cancel(this._consumerTag, (err, _ok) => {
           /* istanbul ignore if */
           if (err) {
             reject(err);
@@ -326,7 +326,7 @@ export class Queue {
             return this.stopConsumer();
           })
           .then(() => {
-            return this._channel.deleteQueue(this._name, {}, (err, ok) => {
+            return this._channel.deleteQueue(this._name, {}, (err: Error, ok: DeleteResult) => {
               /* istanbul ignore if */
               if (err) {
                 reject(err);
@@ -340,7 +340,7 @@ export class Queue {
                   } else {
                     delete this._channel;
                     delete this._connection;
-                    resolve(<DeleteResult>ok);
+                    resolve(ok);
                   }
                 });
               }
@@ -385,10 +385,10 @@ export class Queue {
     return this._closing;
   }
   bind(source: Exchange, pattern = "", args: any = {}): Promise<Binding> {
-    var binding = new Binding(this, source, pattern, args);
+    const binding = new Binding(this, source, pattern, args);
     return binding.initialized;
   }
-  unbind(source: Exchange, pattern = "", args: any = {}): Promise<void> {
+  unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
     return this._connection._bindings[Binding.id(this, source, pattern)].delete();
   }
 }

@@ -17,9 +17,9 @@ export class Connection extends EventEmitter {
   private connectedBefore = false;
   _connection: AmqpLib.Connection;
   _retry: number;
-  _rebuilding: boolean = false;
-  _isClosing: boolean = false;
-  public isConnected: boolean = false;
+  _rebuilding = false;
+  _isClosing = false;
+  public isConnected = false;
   _exchanges: {
     [id: string]: Exchange;
   };
@@ -103,7 +103,7 @@ export class Connection extends EventEmitter {
           );
           thisConnection.emit("trying_connect");
           setTimeout(
-            thisConnection.tryToConnect,
+            thisConnection.tryToConnect.bind(this),
             thisConnection.reconnectStrategy.interval,
             thisConnection,
             retry + 1,
@@ -117,7 +117,7 @@ export class Connection extends EventEmitter {
           callback(err);
         }
       } else {
-        var restart = (err: Error) => {
+        const restart = (err: Error): void => {
           log.log("debug", "Connection error occurred.", {
             module: "amqp-ts",
           });
@@ -125,7 +125,7 @@ export class Connection extends EventEmitter {
           //connection.removeListener("end", restart); // not sure this is needed
           thisConnection._rebuildAll(err); //try to rebuild the topology when the connection  unexpectedly closes
         };
-        var onClose = () => {
+        const onClose = (): void => {
           connection.removeListener("close", onClose);
           if (!this._isClosing) {
             thisConnection.emit("lost_connection");
@@ -146,16 +146,16 @@ export class Connection extends EventEmitter {
     log.log("debug", "Rebuilding connection NOW.", { module: "amqp-ts" });
     this.rebuildConnection();
     //re initialize exchanges, queues and bindings if they exist
-    for (var exchangeId in this._exchanges) {
-      var exchange = this._exchanges[exchangeId];
+    for (const exchangeId in this._exchanges) {
+      const exchange = this._exchanges[exchangeId];
       log.log("debug", "Re-initialize Exchange '" + exchange._name + "'.", {
         module: "amqp-ts",
       });
       exchange._initialize();
     }
-    for (var queueId in this._queues) {
-      var queue = this._queues[queueId];
-      var consumer = queue._consumer;
+    for (const queueId in this._queues) {
+      const queue = this._queues[queueId];
+      const consumer = queue._consumer;
       log.log("debug", "Re-initialize queue '" + queue._name + "'.", {
         module: "amqp-ts",
       });
@@ -165,8 +165,8 @@ export class Connection extends EventEmitter {
         queue._initializeConsumer();
       }
     }
-    for (var bindingId in this._bindings) {
-      var binding = this._bindings[bindingId];
+    for (const bindingId in this._bindings) {
+      const binding = this._bindings[bindingId];
       log.log(
         "debug",
         "Re-initialize binding from '" + binding._source._name + "' to '" + binding._destination._name + "'.",
@@ -208,21 +208,21 @@ export class Connection extends EventEmitter {
    * Make sure the whole defined connection topology is configured:
    * return promise that fulfills after all defined exchanges, queues and bindings are initialized
    */
-  completeConfiguration(): Promise<any> {
-    var promises: Promise<any>[] = [];
-    for (var exchangeId in this._exchanges) {
-      var exchange: Exchange = this._exchanges[exchangeId];
+  async completeConfiguration(): Promise<any> {
+    const promises: Promise<any>[] = [];
+    for (const exchangeId in this._exchanges) {
+      const exchange: Exchange = this._exchanges[exchangeId];
       promises.push(exchange.initialized);
     }
-    for (var queueId in this._queues) {
-      var queue: Queue = this._queues[queueId];
+    for (const queueId in this._queues) {
+      const queue: Queue = this._queues[queueId];
       promises.push(queue.initialized);
-      if (queue._consumerInitialized) {
+      if (await queue._consumerInitialized) {
         promises.push(queue._consumerInitialized);
       }
     }
-    for (var bindingId in this._bindings) {
-      var binding: Binding = this._bindings[bindingId];
+    for (const bindingId in this._bindings) {
+      const binding: Binding = this._bindings[bindingId];
       promises.push(binding.initialized);
     }
     return Promise.all(promises);
@@ -231,60 +231,60 @@ export class Connection extends EventEmitter {
    * Delete the whole defined connection topology:
    * return promise that fulfills after all defined exchanges, queues and bindings have been removed
    */
-  deleteConfiguration(): Promise<any> {
-    var promises: Promise<any>[] = [];
-    for (var bindingId in this._bindings) {
-      var binding: Binding = this._bindings[bindingId];
+  async deleteConfiguration(): Promise<any> {
+    const promises: Promise<any>[] = [];
+    for (const bindingId in this._bindings) {
+      const binding: Binding = this._bindings[bindingId];
       promises.push(binding.delete());
     }
-    for (var queueId in this._queues) {
-      var queue: Queue = this._queues[queueId];
-      if (queue._consumerInitialized) {
+    for (const queueId in this._queues) {
+      const queue: Queue = this._queues[queueId];
+      if (await queue._consumerInitialized) {
         promises.push(queue.stopConsumer());
       }
       promises.push(queue.delete());
     }
-    for (var exchangeId in this._exchanges) {
-      var exchange: Exchange = this._exchanges[exchangeId];
+    for (const exchangeId in this._exchanges) {
+      const exchange: Exchange = this._exchanges[exchangeId];
       promises.push(exchange.delete());
     }
     return Promise.all(promises);
   }
   declareExchange(name: string, type?: string, options?: ExchangeDeclarationOptions): Exchange {
-    var exchange = this._exchanges[name];
+    let exchange = this._exchanges[name];
     if (exchange === undefined) {
       exchange = new Exchange(this, name, type, options);
     }
     return exchange;
   }
   declareQueue(name: string, options?: QueueDeclrationOptions): Queue {
-    var queue = this._queues[name];
+    let queue = this._queues[name];
     if (queue === undefined) {
       queue = new Queue(this, name, options);
     }
     return queue;
   }
   declareTopology(topology: Topology): Promise<any> {
-    var promises: Promise<any>[] = [];
-    var i: number;
-    var len: number;
+    const promises: Promise<any>[] = [];
+    let i: number;
+    let len: number;
     if (topology.exchanges !== undefined) {
       for (i = 0, len = topology.exchanges.length; i < len; i++) {
-        var exchange = topology.exchanges[i];
+        const exchange = topology.exchanges[i];
         promises.push(this.declareExchange(exchange.name, exchange.type, exchange.options).initialized);
       }
     }
     if (topology.queues !== undefined) {
       for (i = 0, len = topology.queues.length; i < len; i++) {
-        var queue = topology.queues[i];
+        const queue = topology.queues[i];
         promises.push(this.declareQueue(queue.name, queue.options).initialized);
       }
     }
     if (topology.bindings !== undefined) {
       for (i = 0, len = topology.bindings.length; i < len; i++) {
-        var binding = topology.bindings[i];
-        var source = this.declareExchange(binding.source);
-        var destination: Queue | Exchange;
+        const binding = topology.bindings[i];
+        const source = this.declareExchange(binding.source);
+        let destination: Queue | Exchange;
         if (binding.exchange !== undefined) {
           destination = this.declareExchange(binding.exchange);
         } else {
