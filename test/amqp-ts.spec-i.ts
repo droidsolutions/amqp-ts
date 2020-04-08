@@ -5,7 +5,7 @@
 import * as Chai from "chai";
 var expect = Chai.expect;
 
-import * as Amqp from "../lib/amqp-ts";
+import * as Amqp from "../src/amqp-ts";
 
 /**
  * Test using a local rabbitmq instance

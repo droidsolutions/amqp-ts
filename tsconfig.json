@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
-    "target": "ES5",
+    "target": "ES2018",
     "module": "commonjs",
     "removeComments": true,
     "preserveConstEnums": true,
-    "outDir": "./transpiled",
+    "outDir": "./lib",
     "declaration": true,
     "rootDir": "./src",
     "sourceMap": true
-  }
+  },
+  "exclude": ["lib", "test"]
 }

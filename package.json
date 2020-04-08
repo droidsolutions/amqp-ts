@@ -15,10 +15,17 @@
   "author": "Ab Reitsma",
   "main": "lib/amqp-ts.js",
   "typings": "lib/amqp-ts.d.ts",
+  "files": [
+    "lib/*"
+  ],
   "scripts": {
+    "clean": "rimraf lib",
     "docker-develop": "npm install && node tools/alive",
     "lint": "tslint -r tools/tslint/tslint-node.json src/*.ts",
-    "test": "gulp test",
+    "build": "tsc",
+    "build:clean": "npm run clean && npm run build",
+    "test": "mocha test/amqp-ts.spec.ts",
+    "test:coverage": "nyc mocha test/amqp-ts.spec.ts",
     "test-integration": "gulp test:integration"
   },
   "dependencies": {
@@ -46,13 +53,16 @@
     "line-reader": "^0.4.0",
     "merge2": "^1.3.0",
     "mocha": "^7.1.1",
+    "nyc": "^15.0.1",
+    "rimraf": "^3.0.2",
     "semantic-release": "^17.0.4",
     "source-map-support": "^0.5.16",
     "tslint": "^6.1.1",
+    "ts-node": "^8.8.2",
     "typescript": "^3.8.3"
   },
   "engines": {
-    "node": ">=0.8 <=12"
+    "node": ">=10 <=12"
   },
   "contributors": [
     {
@@ -79,5 +89,33 @@
       "@semantic-release/github",
       "@semantic-release/git"
     ]
+  },
+  "mocha": {
+    "extension": [
+      "ts"
+    ],
+    "require": [
+      "ts-node/register",
+      "source-map-support/register"
+    ]
+  },
+  "nyc": {
+    "extension": [
+      ".ts"
+    ],
+    "include": [
+      "src/*.ts"
+    ],
+    "exclude": [
+      ".nyc_output/*",
+      "coverage/*",
+      "lib/*",
+      "test/*"
+    ],
+    "reporter": [
+      "html",
+      "text-summary"
+    ],
+    "all": true
   }
 }

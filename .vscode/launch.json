@@ -101,7 +101,7 @@
 				"exec",
 				"dev-amqp-ts",
                 "node",
-                "--debug-brk",
+                "--inspect-brk",
                 "--nolazy",
                 "/src/node_modules/mocha/bin/_mocha",
                 "transpiled/amqp-ts.spec.js"
