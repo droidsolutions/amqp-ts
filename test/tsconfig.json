@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../",
+    "outDir": "__test",
+    "module": "commonjs",
+    "incremental": true,
+    "noUnusedLocals": false
+  },
+  "exclude": ["__test"]
+}
