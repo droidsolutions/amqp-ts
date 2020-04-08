@@ -30,7 +30,6 @@
   },
   "dependencies": {
     "amqplib": "^0.5.5",
-    "bluebird": "^3.7.2",
     "winston": "^2.4.4"
   },
   "devDependencies": {

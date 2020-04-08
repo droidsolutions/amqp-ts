@@ -2,7 +2,6 @@
  * Tests for amqp-ts
  * Created by Ab on 2015-09-16.
  */
-import * as Promise from "bluebird";
 import * as Chai from "chai";
 var expect = Chai.expect;
 
@@ -1130,7 +1129,7 @@ describe("Test amqp-ts module", function () {
     });
 
     // skip until we know why it is hanging
-    it.skip("should process an exchange rpc", function (done) {
+    it("should process an exchange rpc", function (done) {
       // initialize
       var connection = getAmqpConnection();
 

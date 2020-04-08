@@ -34,7 +34,6 @@ The library is considered production ready.
 It does depend on the following npm libraries:
 
 - [amqplib](http://www.squaremobius.net/amqp.node/)
-- [bluebird](https://github.com/petkaantonov/bluebird)
 - [winston](https://github.com/winstonjs/winston)
 
 ### Lazy Initialization <a name="initialization"></a>

@@ -65,12 +65,8 @@ export class Message {
     } else {
       exchange = destination._name;
     }
-    // execute sync when possible
-    if (destination.initialized.isFulfilled()) {
-      sendMessage();
-    } else {
-      (<Promise<any>>destination.initialized).then(sendMessage);
-    }
+
+    (destination.initialized as Promise<any>).then(sendMessage);
   }
   ack(allUpTo?: boolean): void {
     if (this._channel !== undefined) {

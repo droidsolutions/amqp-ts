@@ -10,10 +10,9 @@ import { StartConsumerOptions } from "./StartConsumerOptions";
 import { StartConsumerResult } from "./StartConsumerResult";
 import { DeleteResult } from "./DeleteResult";
 import { ActivateConsumerOptions } from "./ActivateConsumerOptions";
-import Bluebird = require("bluebird");
 
 export class Queue {
-  initialized: Bluebird<InitializeResult>;
+  initialized: Promise<InitializeResult>;
   _connection: Connection;
   _channel: AmqpLib.Channel;
   _name: string;
@@ -38,7 +37,7 @@ export class Queue {
     this._initialize();
   }
   _initialize(): void {
-    this.initialized = new Bluebird<InitializeResult>((resolve, reject) => {
+    this.initialized = new Promise<InitializeResult>((resolve, reject) => {
       this._connection.initialized
         .then(() => {
           this._connection._connection.createChannel((err, channel) => {
@@ -116,11 +115,7 @@ export class Queue {
     };
     content = Queue._packMessageContent(content, options);
     // execute sync when possible
-    if (this.initialized.isFulfilled()) {
-      sendMessage();
-    } else {
-      this.initialized.then(sendMessage);
-    }
+    this.initialized.then(sendMessage);
   }
   send(message: Message): void {
     message.sendTo(this);
@@ -153,12 +148,7 @@ export class Queue {
           },
         );
       };
-      // execute sync when possible
-      if (this.initialized.isFulfilled()) {
-        processRpc();
-      } else {
-        this.initialized.then(processRpc);
-      }
+      this.initialized.then(processRpc);
     });
   }
   prefetch(count: number): void {

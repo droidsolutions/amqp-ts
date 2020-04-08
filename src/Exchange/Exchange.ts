@@ -8,10 +8,9 @@ import * as AmqpLib from "amqplib/callback_api";
 import * as os from "os";
 import { StartConsumerOptions } from "../Queue/StartConsumerOptions";
 import { ActivateConsumerOptions } from "../Queue/ActivateConsumerOptions";
-import Bluebird = require("bluebird");
 
 export class Exchange {
-  initialized: Bluebird<InitializeResult>;
+  initialized: Promise<InitializeResult>;
   _consumer_handlers: Array<[string, any]> = new Array<[string, any]>();
   _isConsumerInitializedRcp: boolean = false;
   _connection: Connection;
@@ -35,7 +34,7 @@ export class Exchange {
     this._initialize();
   }
   _initialize() {
-    this.initialized = new Bluebird<InitializeResult>((resolve, reject) => {
+    this.initialized = new Promise<InitializeResult>((resolve, reject) => {
       this._connection.initialized
         .then(() => {
           this._connection._connection.createChannel((err, channel) => {
@@ -124,6 +123,7 @@ export class Exchange {
                   func.apply("", [undefined, result]);
                 }
               }
+              resolve(result);
             },
             { noAck: true },
             (err, ok) => {
@@ -131,8 +131,10 @@ export class Exchange {
               if (err) {
                 reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
               } else {
-                // send the rpc request
-                this._consumer_handlers.push([uuid, callback]);
+                if (callback) {
+                  // send the rpc request
+                  this._consumer_handlers.push([uuid, callback]);
+                }
                 // consumerTag = ok.consumerTag;
                 var message = new Message(requestParameters, {
                   correlationId: uuid,
@@ -149,14 +151,11 @@ export class Exchange {
             replyTo: DIRECT_REPLY_TO_QUEUE,
           });
           message.sendTo(this, routingKey);
+          resolve(message);
         }
       };
-      // execute sync when possible
-      if (this.initialized.isFulfilled()) {
-        processRpc();
-      } else {
-        this.initialized.then(processRpc);
-      }
+
+      this.initialized.then(processRpc);
     });
   }
   delete(): Promise<void> {
