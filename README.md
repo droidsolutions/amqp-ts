@@ -47,9 +47,9 @@ sure that the queue is connected to the exchange before you send a message to th
 ##### Typescript Example
 
 ```TypeScript
-import * as Amqp from "amqp-ts";
+import { Connection, Message } from "amqp-ts";
 
-var connection = new Amqp.Connection("amqp://localhost");
+var connection = new Connection("amqp://localhost");
 var exchange = connection.declareExchange("ExchangeName");
 var queue = connection.declareQueue("QueueName");
 queue.bind(exchange);
@@ -59,13 +59,13 @@ queue.activateConsumer((message) => {
 
 // it is possible that the following message is not received because
 // it can be sent before the queue, binding or consumer exist
-var msg = new Amqp.Message("Test");
+var msg = new Message("Test");
 exchange.send(msg);
 
 connection.completeConfiguration().then(() => {
     // the following message will be received because
     // everything you defined earlier for this connection now exists
-    var msg2 = new Amqp.Message("Test2");
+    var msg2 = new Message("Test2");
     exchange.send(msg2);
 });
 ```
