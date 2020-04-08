@@ -8,6 +8,9 @@ var expect = Chai.expect;
 
 import * as AmqpLib from "amqplib";
 import * as Amqp from "../src/amqp-ts";
+import { Topology } from "../src/Connection/Topology";
+import { Connection } from "../src/Connection/Connection";
+import { Message } from "../src/Message";
 
 /**
  * Until we get a good mock for amqplib we will test using a local rabbitmq instance
@@ -39,9 +42,9 @@ describe("Test amqp-ts module", function () {
   }
 
   // keep track of the created connections for cleanup
-  var connections: Amqp.Connection[] = [];
+  var connections: Connection[] = [];
   function getAmqpConnection() {
-    var conn = new Amqp.Connection(ConnectionUrl, {}, { retries: 5, interval: 1500 });
+    var conn = new Connection(ConnectionUrl, {}, { retries: 5, interval: 1500 });
     connections.push(conn);
     return conn;
   }
@@ -423,7 +426,7 @@ describe("Test amqp-ts module", function () {
       }, { noAck: true });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         queue.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -448,7 +451,7 @@ describe("Test amqp-ts module", function () {
       });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         queue.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -479,7 +482,7 @@ describe("Test amqp-ts module", function () {
       });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         queue.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -504,7 +507,7 @@ describe("Test amqp-ts module", function () {
             expect(message.getContent()).equals("Test");
             message.nack(false, false);
             nacked = true;
-            var msg = new Amqp.Message("Test Finished");
+            var msg = new Message("Test Finished");
             queue.send(msg);
           }
         } catch (err) {
@@ -513,7 +516,7 @@ describe("Test amqp-ts module", function () {
       });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         queue.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -538,7 +541,7 @@ describe("Test amqp-ts module", function () {
       });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         queue.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -565,7 +568,7 @@ describe("Test amqp-ts module", function () {
       }, { noAck: true });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message(testObj);
+        var msg = new Message(testObj);
         queue.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -627,7 +630,7 @@ describe("Test amqp-ts module", function () {
       }, { noAck: true });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         exchange.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -656,7 +659,7 @@ describe("Test amqp-ts module", function () {
       }, { noAck: true });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message(testObj);
+        var msg = new Message(testObj);
         exchange.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -679,7 +682,7 @@ describe("Test amqp-ts module", function () {
       }, { noAck: true });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         exchange.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -707,7 +710,7 @@ describe("Test amqp-ts module", function () {
       }, { noAck: true });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         exchange1.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -743,7 +746,7 @@ describe("Test amqp-ts module", function () {
             done(err);
           } else {
             // it should auto reconnect and send the message
-            var msg = new Amqp.Message("Test");
+            var msg = new Message("Test");
             exchange1.send(msg);
           }
         });
@@ -777,7 +780,7 @@ describe("Test amqp-ts module", function () {
             done(err);
           } else {
             // it should auto reconnect and send the message
-            var msg = new Amqp.Message("Test");
+            var msg = new Message("Test");
             queue.send(msg);
           }
         });
@@ -811,7 +814,7 @@ describe("Test amqp-ts module", function () {
       }, { noAck: true });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         queue.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -843,7 +846,7 @@ describe("Test amqp-ts module", function () {
       }, { noAck: true });
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         queue.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
@@ -949,7 +952,7 @@ describe("Test amqp-ts module", function () {
 
       // test code
       var queue = connection.declareQueue(nextQueueName());
-      var msg = new Amqp.Message("Test");
+      var msg = new Message("Test");
 
       queue.send(msg);
 
@@ -976,7 +979,7 @@ describe("Test amqp-ts module", function () {
       exchange1.bind(exchange2, "*.test", {});
 
       connection.completeConfiguration().then(() => {
-        var msg = new Amqp.Message("ParameterTest", {});
+        var msg = new Message("ParameterTest", {});
         exchange2.send(msg, "topic.test");
         exchange1.send(msg, "topic.test2");
         queue.send(msg);
@@ -1086,7 +1089,7 @@ describe("Test amqp-ts module", function () {
       var queue = connection.declareQueue(nextQueueName());
 
       queue.activateConsumer((message) => {
-        return new Amqp.Message(message.getContent().reply);
+        return new Message(message.getContent().reply);
       });
 
       queue.rpc({ reply: "TestRpc" }).then((result) => {
@@ -1158,7 +1161,7 @@ describe("Test amqp-ts module", function () {
       var exchangeName1 = nextExchangeName();
       var exchangeName2 = nextExchangeName();
       var queueName1 = nextQueueName();
-      var topology: Amqp.Connection.Topology = {
+      var topology: Topology = {
         exchanges: [
           { name: exchangeName1 },
           { name: exchangeName2 }
@@ -1180,7 +1183,7 @@ describe("Test amqp-ts module", function () {
         }, { noAck: true });
 
         var exchange = connection.declareExchange(exchangeName1);
-        var msg = new Amqp.Message("Test");
+        var msg = new Message("Test");
         exchange.send(msg);
       }, (err) => { // failed to configure the defined topology
         done(err);
