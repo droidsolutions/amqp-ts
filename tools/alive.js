@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 // simple tool that keeps the development docker container from closing
 
 console.log("Starting alive at " + new Date().toLocaleString());

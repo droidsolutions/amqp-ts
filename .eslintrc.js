@@ -13,7 +13,7 @@ module.exports = {
     "plugin:@typescript-eslint/eslint-recommended",
     "plugin:@typescript-eslint/recommended",
     "plugin:@typescript-eslint/recommended-requiring-type-checking",
-    "prettier/@typescript-eslint"
+    "prettier/@typescript-eslint",
   ],
   ignorePatterns: ["coverage", "lib", "test/__test"],
   rules: {
@@ -23,26 +23,28 @@ module.exports = {
     "max-len": ["warn", { code: 120 }],
     "no-console": "error",
     "@typescript-eslint/ban-types": "error",
-    "@typescript-eslint/interface-name-prefix": [
-      "warn",
-      { prefixWithI: "never" }
-    ],
+    "@typescript-eslint/interface-name-prefix": ["warn", { prefixWithI: "never" }],
     "@typescript-eslint/no-explicit-any": "off",
     "@typescript-eslint/no-unused-vars": [
       "warn",
       {
         vars: "all",
         args: "all",
-        argsIgnorePattern: "^_"
-      }
+        argsIgnorePattern: "^_",
+      },
     ],
-    "@typescript-eslint/quotes": [
-      "warn",
-      "double",
-      { allowTemplateLiterals: true }
-    ]
+    "@typescript-eslint/quotes": ["warn", "double", { allowTemplateLiterals: true }],
   },
   overrides: [
+    {
+      files: ["tutorials/**/**"],
+      rules: {
+        "no-var-requires": "off",
+        "no-console": "off",
+        "@typescript-eslint/no-var-requires": "off",
+        "@typescript-eslint/explicit-function-return-type": "off"
+      },
+    },
     {
       files: ["test/**/*"],
       env: { mocha: true },
@@ -54,8 +56,8 @@ module.exports = {
         "@typescript-eslint/explicit-function-return-type": "off",
         "@typescript-eslint/unbound-method": "off",
         "@typescript-eslint/no-empty-function": "off",
-        "dot-notation": ["off"]
-      }
-    }
-  ]
+        "dot-notation": ["off"],
+      },
+    },
+  ],
 };
