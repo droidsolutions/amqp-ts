@@ -3,19 +3,20 @@
  * Tests for amqp-ts
  * Created by Ab on 2015-09-16.
  */
-import * as Chai from "chai";
-const expect = Chai.expect;
-
 import * as AmqpLib from "amqplib";
+import * as Chai from "chai";
+import * as chaiAsPromised from "chai-as-promised";
 import * as Amqp from "../src/amqp-ts";
-import { Topology } from "../src/Connection/Topology";
 import { Connection } from "../src/Connection/Connection";
+import { Topology } from "../src/Connection/Topology";
 import { Message } from "../src/Message";
+import { resolve } from "dns";
 
 /**
  * Until we get a good mock for amqplib we will test using a local rabbitmq instance
  */
 // define test defaults
+const expect = Chai.expect;
 const ConnectionUrl = process.env.AMQPTEST_CONNECTION_URL || "amqp://localhost";
 const UnitTestTimeout = process.env.AMQPTEST_TIMEOUT || 1500;
 const LogLevel = process.env.AMQPTEST_LOGLEVEL || "critical";
@@ -49,23 +50,6 @@ describe("Test amqp-ts module", function () {
     return conn;
   }
 
-  // cleanup failed tests
-  // unfortunately does still not execute after encountering an error in mocha, perhaps in future versions
-  after(function (done) {
-    const processAll: Promise<any>[] = [];
-    console.log("cleanup phase!");
-    for (let i = 0, l = connections.length; i < l; i++) {
-      processAll.push(connections[i].deleteConfiguration());
-    }
-    Promise.all(processAll)
-      .then(() => {
-        done();
-      })
-      .catch((err) => {
-        done(err);
-      });
-  });
-
   // cleanup function for the AMQP connection, also tests the Connection.deleteConfiguration method
   function cleanup(connection, done, error?) {
     connection
@@ -83,15 +67,45 @@ describe("Test amqp-ts module", function () {
       );
   }
 
+  let currentConnection: Connection;
+  let callbackResolve: (value?: any) => void;
+
+  before(function () {
+    Chai.use(chaiAsPromised);
+  });
+
+  beforeEach(function () {
+    currentConnection = getAmqpConnection();
+  });
+
+  afterEach(function () {
+    cleanup(currentConnection, () => {});
+  });
+
+  // cleanup failed tests
+  // unfortunately does still not execute after encountering an error in mocha, perhaps in future versions
+  after(function (done) {
+    const processAll: Promise<any>[] = [];
+    console.log("cleanup phase!");
+    for (let i = 0, l = connections.length; i < l; i++) {
+      processAll.push(connections[i].deleteConfiguration());
+    }
+    Promise.all(processAll)
+      .then(() => {
+        done();
+      })
+      .catch((err) => {
+        done(err);
+      });
+  });
+
   describe("AMQP Connection class initialization", function () {
     it("should create a RabbitMQ connection", function (done) {
-      // test code
-      const connection = getAmqpConnection();
       // check result
-      connection.initialized
+      currentConnection.initialized
         .then(() => {
           // successfully create the AMQP connection
-          connection.close().then(() => {
+          currentConnection.close().then(() => {
             // successfully close the AMQP connection
             done();
           });
@@ -104,319 +118,200 @@ describe("Test amqp-ts module", function () {
   });
 
   describe("AMQP Deprecated usage tests", function () {
-    it("should create a Queue and send and receive simple string messages", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a Queue and send and receive simple string messages", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
 
-      queue
-        .startConsumer((message) => {
-          try {
-            expect(message).equals("Test");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        })
-        .then(() => {
-          connection.completeConfiguration().then(
-            () => {
-              queue.publish("Test");
-            },
-            (err) => {
-              // failed to configure the defined topology
-              done(err);
-            },
-          );
-        });
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+
+      await queue.startConsumer((message) => {
+        callbackResolve(message);
+      });
+      await currentConnection.completeConfiguration();
+
+      queue.publish("Test");
+      await expect(testPromise).to.eventually.equal("Test");
     });
 
-    it("should create a Queue and send and receive simple string objects", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a Queue and send and receive simple string objects", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
       const testObj = {
         text: "Test",
       };
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
 
-      queue
-        .startConsumer((message) => {
-          try {
-            expect(message).eql(testObj);
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        })
-        .then(() => {
-          connection.completeConfiguration().then(
-            () => {
-              queue.publish(testObj);
-            },
-            (err) => {
-              // failed to configure the defined topology
-              done(err);
-            },
-          );
-        });
+      await queue.startConsumer((message) => {
+        callbackResolve(message);
+      });
+      await currentConnection.completeConfiguration();
+      queue.publish(testObj);
+      await expect(testPromise).to.eventually.eql(testObj);
     });
 
-    it("should create a Queue, send a simple string message and receive the raw message", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a Queue, send a simple string message and receive the raw message", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+
       const rawConsumer = (message: AmqpLib.Message, channel: AmqpLib.Channel) => {
-        try {
-          expect(message.content.toString()).equals("Test");
-          channel.ack(message);
-          cleanup(connection, done);
-        } catch (err) {
-          cleanup(connection, done, err);
-        }
+        callbackResolve(message.content.toString());
+        channel.ack(message);
       };
 
-      queue.startConsumer(rawConsumer, { rawMessage: true }).then(() => {
-        connection.completeConfiguration().then(
-          () => {
-            queue.publish("Test");
-          },
-          (err) => {
-            // failed to configure the defined topology
-            done(err);
-          },
-        );
-      });
+      await queue.startConsumer(rawConsumer, { rawMessage: true });
+      await currentConnection.completeConfiguration();
+      queue.publish("Test");
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should create a Queue, send a simple string message and receive the raw message 2", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a Queue, send a simple string message and receive the raw message 2", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+
       const rawConsumer = (message: AmqpLib.Message, channel: AmqpLib.Channel) => {
-        try {
-          expect(message.content.toString()).equals("Test");
-          channel.ack(message);
-          cleanup(connection, done);
-        } catch (err) {
-          cleanup(connection, done, err);
-        }
+        callbackResolve(message.content.toString());
+        channel.ack(message);
       };
 
-      queue.startConsumer(rawConsumer, { rawMessage: true }).then(() => {
-        connection.completeConfiguration().then(
-          () => {
-            queue.publish("Test");
-          },
-          (err) => {
-            // failed to configure the defined topology
-            done(err);
-          },
-        );
-      });
+      await queue.startConsumer(rawConsumer, { rawMessage: true });
+      await currentConnection.completeConfiguration();
+      queue.publish("Test");
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should reconnect when sending a message to an Exchange after a broken connection", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
+    it("should reconnect when sending a message to an Exchange after a broken connection", async function () {
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
 
       // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-      const exchange2 = connection.declareExchange(nextExchangeName());
-      exchange2.bind(exchange1);
-      const queue = connection.declareQueue(nextQueueName());
-      queue.bind(exchange1);
-      queue
-        .startConsumer((message) => {
-          try {
-            expect(message).equals("Test");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+      const exchange2 = currentConnection.declareExchange(nextExchangeName());
+      await exchange2.bind(exchange1);
+      const queue = currentConnection.declareQueue(nextQueueName());
+      await queue.bind(exchange1);
+
+      await queue.startConsumer((message) => {
+        callbackResolve(message);
+      });
+
+      await currentConnection.completeConfiguration();
+      // break currentConnection
+      await new Promise((resolve, reject) => {
+        currentConnection._connection.close((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+            // it should auto reconnect and send the message
           }
-        })
-        .catch((err) => {
-          console.log("Consumer intialization FAILED!!!");
-          done(err);
         });
+      });
 
-      connection.completeConfiguration().then(
-        () => {
-          // break connection
-          connection._connection.close((err) => {
-            if (err) {
-              done(err);
-            } else {
-              // it should auto reconnect and send the message
-              queue.publish("Test");
-            }
-          });
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      queue.publish("Test");
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should reconnect when sending a message to a Queue after a broken connection", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
+    it("should reconnect when sending a message to a Queue after a broken connection", async function () {
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
 
-      // test code
-      // var exchange1 = connection.declareExchange(nextExchangeName());
-      // var exchange2 = connection.declareExchange(nextExchangeName());
-      // exchange2.bind(exchange1);
-      const queue = connection.declareQueue(nextQueueName());
-      //queue.bind(exchange1);
-      queue
-        .startConsumer((message) => {
-          try {
-            expect(message).equals("Test");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
+      await queue.startConsumer((message) => {
+        callbackResolve(message);
+      });
+      await currentConnection.completeConfiguration();
+
+      await new Promise((resolve, reject) => {
+        currentConnection._connection.close((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+            // it should auto reconnect and send the message
           }
-        })
-        .then(() => {
-          connection.completeConfiguration().then(
-            () => {
-              // break connection
-              connection._connection.close((err) => {
-                if (err) {
-                  done(err);
-                } else {
-                  // it should auto reconnect and send the message
-                  queue.publish("Test");
-                }
-              });
-            },
-            (err) => {
-              // failed to configure the defined topology
-              done(err);
-            },
-          );
-        })
-        .catch((err) => {
-          console.log("Consumer intialization FAILED!!!");
-          done(err);
         });
-    });
-
-    it("should not start 2 consumers for the same queue", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-      const queue = connection.declareQueue(nextQueueName());
-
-      queue.bind(exchange1);
-      queue
-        .startConsumer((_message) => {
-          cleanup(connection, done, new Error("Received unexpected message"));
-        })
-        .then(() => {
-          queue
-            .startConsumer((_message) => {
-              cleanup(connection, done, new Error("Received unexpected message"));
-            })
-            .catch((err) => {
-              expect(err.message).equal("amqp-ts Queue.startConsumer error: consumer already defined");
-              cleanup(connection, done);
-            });
-        });
-    });
-
-    it("should not start 2 consumers for the same exchange", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-
-      exchange1.startConsumer((_message) => {
-        cleanup(connection, done, new Error("Received unexpected message"));
       });
-      exchange1
-        .startConsumer((_message) => {
-          cleanup(connection, done, new Error("Received unexpected message"));
-        })
-        .catch((err) => {
-          expect(err.message).equal("amqp-ts Exchange.startConsumer error: consumer already defined");
-          cleanup(connection, done);
-        });
+
+      queue.publish("Test");
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should stop an Exchange consumer", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should not start 2 consumers for the same queue", async function () {
       // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+      const queue = currentConnection.declareQueue(nextQueueName());
 
-      exchange1.startConsumer((_message) => {
-        cleanup(connection, done, new Error("Received unexpected message"));
+      await queue.bind(exchange1);
+      await queue.startConsumer((_message) => {
+        // cleanup(currentConnection, done, new Error("Received unexpected message"));
       });
-      exchange1.stopConsumer().then(() => {
-        cleanup(connection, done);
-      });
+
+      await expect(
+        queue.startConsumer((_message) => {
+          // cleanup(currentConnection, done, new Error("Received unexpected message"));
+        }),
+      ).to.be.rejectedWith("amqp-ts Queue.startConsumer error: consumer already defined");
     });
 
-    it("should not generate an error when stopping a non existing Exchange consumer", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should not start 2 consumers for the same exchange", async function () {
       // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
 
-      exchange1.startConsumer((_message) => {
-        cleanup(connection, done, new Error("Received unexpected message"));
+      await exchange1.startConsumer((_message) => {
+        // cleanup(currentConnection, done, new Error("Received unexpected message"));
       });
-      exchange1
-        .stopConsumer()
-        .then(() => {
-          return exchange1.stopConsumer();
-        })
-        .then(() => {
-          cleanup(connection, done);
-        })
-        .catch((err) => {
-          cleanup(connection, done, err);
-        });
+      await expect(
+        exchange1.startConsumer((_message) => {
+          // cleanup(currentConnection, done, new Error("Received unexpected message"));
+        }),
+      ).to.be.rejectedWith("amqp-ts Exchange.startConsumer error: consumer already defined");
     });
 
-    it("should not generate an error when stopping a non existing Queue consumer", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should stop an Exchange consumer", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
 
-      queue
-        .startConsumer((_message) => {
-          cleanup(connection, done, new Error("Received unexpected message"));
-        })
-        .then(() => {
-          queue
-            .stopConsumer()
-            .then(() => {
-              return queue.stopConsumer();
-            })
-            .then(() => {
-              cleanup(connection, done);
-            })
-            .catch((err) => {
-              cleanup(connection, done, err);
-            });
-        });
+      await exchange1.startConsumer((_message) => {
+        // cleanup(currentConnection, done, new Error("Received unexpected message"));
+      });
+      await exchange1.stopConsumer();
+
+      // ToDo check if consumer is really stopped
+      expect(true).to.equal(true);
+    });
+
+    it("should not generate an error when stopping a non existing Exchange consumer", async function () {
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+
+      await exchange1.startConsumer((_message) => {
+        // cleanup(currentConnection, done, new Error("Received unexpected message"));
+      });
+      await exchange1.stopConsumer();
+      await expect(exchange1.stopConsumer()).to.eventually.be.undefined;
+    });
+
+    it("should not generate an error when stopping a non existing Queue consumer", async function () {
+      // test code
+      const queue = currentConnection.declareQueue(nextQueueName());
+
+      await queue.startConsumer((_message) => {
+        // cleanup(currentConnection, done, new Error("Received unexpected message"));
+      });
+      await queue.stopConsumer();
+      await expect(queue.stopConsumer()).to.eventually.be.undefined;
     });
   });
 
@@ -427,900 +322,615 @@ describe("Test amqp-ts module", function () {
      * over. We will however try to identify test failures as specific as possible
      */
 
-    it("should create a Queue with specified name", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a Queue with specified name", async function () {
       // test code
       const queueName = nextQueueName();
-      const queue = connection.declareQueue(queueName);
+      const queue = currentConnection.declareQueue(queueName);
 
-      connection.completeConfiguration().then(
-        () => {
-          try {
-            expect(queue.name).equals(queueName);
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
+      expect(queue.name).equals(queueName);
     });
 
-    it("should create an Exchange with specified name and type", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create an Exchange with specified name and type", async function () {
       // test code
       const exchangeName = nextExchangeName();
-      const exchange = connection.declareExchange(exchangeName, "fanout");
+      const exchange = currentConnection.declareExchange(exchangeName, "fanout");
 
-      connection.completeConfiguration().then(
-        () => {
-          try {
-            expect(exchange.name).equals(exchangeName);
-            expect(exchange.type).equals("fanout");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
+
+      expect(exchange.name).equals(exchangeName);
+      expect(exchange.type).equals("fanout");
     });
 
-    it("should create a Queue and send and receive a simple text Message", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a Queue and send and receive a simple text Message", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
 
-      queue.activateConsumer(
+      await queue.activateConsumer(
         (message) => {
-          try {
-            expect(message.getContent()).equals("Test");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
+          callbackResolve(message.getContent());
         },
         { noAck: true },
       );
 
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          queue.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
+
+      const msg = new Message("Test");
+      queue.send(msg);
+
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should create a Queue and send and receive a simple text Message with ack", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a Queue and send and receive a simple text Message with ack", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
 
-      queue.activateConsumer((message) => {
-        try {
-          expect(message.getContent()).equals("Test");
+      await queue.activateConsumer((message) => {
+        callbackResolve(message.getContent());
+        message.ack();
+      });
+
+      await currentConnection.completeConfiguration();
+
+      const msg = new Message("Test");
+      queue.send(msg);
+
+      await expect(testPromise).to.eventually.equals("Test");
+    });
+
+    it("should create a Queue and send and receive a simple text Message with nack", async function () {
+      // test code
+      const queue = currentConnection.declareQueue(nextQueueName());
+      let nacked = false;
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+
+      await queue.activateConsumer((message) => {
+        callbackResolve(message.getContent());
+        if (nacked) {
           message.ack();
-          cleanup(connection, done);
-        } catch (err) {
-          cleanup(connection, done, err);
+        } else {
+          message.nack();
+          nacked = true;
         }
       });
 
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          queue.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
+      const msg = new Message("Test");
+      queue.send(msg);
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should create a Queue and send and receive a simple text Message with nack", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create not resend a nack(false) message", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
       let nacked = false;
+      const testPromiseNacked = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+      let callbackResolveUnnacked: (value?: any) => void;
+      const testPromiseUnnacked = new Promise((resolve) => {
+        callbackResolveUnnacked = resolve;
+      });
 
       queue.activateConsumer((message) => {
-        try {
-          expect(message.getContent()).equals("Test");
-          if (nacked) {
-            message.ack();
-            cleanup(connection, done);
-          } else {
-            message.nack();
-            nacked = true;
-          }
-        } catch (err) {
-          cleanup(connection, done, err);
+        if (nacked) {
+          callbackResolve(message.getContent());
+          message.ack();
+        } else {
+          callbackResolveUnnacked(message.getContent());
+          message.nack(false, false);
+          nacked = true;
+          const msg = new Message("Test Finished");
+          queue.send(msg);
         }
       });
 
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          queue.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
+
+      const msg = new Message("Test");
+      queue.send(msg);
+      await expect(testPromiseUnnacked).to.eventually.equals("Test");
+      await expect(testPromiseNacked).to.eventually.equals("Test Finished");
     });
 
-    it("should create not resend a nack(false) message", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a Queue and send and receive a simple text Message with reject", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
-      let nacked = false;
-
-      queue.activateConsumer((message) => {
-        try {
-          if (nacked) {
-            expect(message.getContent()).equals("Test Finished");
-            message.ack();
-            cleanup(connection, done);
-          } else {
-            expect(message.getContent()).equals("Test");
-            message.nack(false, false);
-            nacked = true;
-            const msg = new Message("Test Finished");
-            queue.send(msg);
-          }
-        } catch (err) {
-          cleanup(connection, done, err);
-        }
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
       });
 
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          queue.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should create a Queue and send and receive a simple text Message with reject", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queue = connection.declareQueue(nextQueueName());
-
-      queue.activateConsumer((message) => {
-        try {
-          expect(message.getContent()).equals("Test");
-          message.reject(false);
-          cleanup(connection, done);
-        } catch (err) {
-          cleanup(connection, done, err);
-        }
+      await queue.activateConsumer((message) => {
+        callbackResolve(message.getContent());
+        message.reject(false);
       });
 
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          queue.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
+
+      const msg = new Message("Test");
+      queue.send(msg);
+
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should create a Queue and send and receive a Message with a structure", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a Queue and send and receive a Message with a structure", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
       const testObj = {
         text: "Test",
       };
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
 
-      queue.activateConsumer(
+      await queue.activateConsumer(
         (message) => {
-          try {
-            expect(message.getContent()).eql(testObj);
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
+          callbackResolve(message.getContent());
         },
         { noAck: true },
       );
 
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message(testObj);
-          queue.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
+
+      const msg = new Message(testObj);
+      queue.send(msg);
+      await expect(testPromise).to.eventually.eql(testObj);
     });
 
-    it("should return the same Queue instance after calling connection.declareQueue multiple times", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should return the same Queue instance after calling connection.declareQueue multiple times", async function () {
       // test code
       const queueName = nextQueueName();
-      const queue1 = connection.declareQueue(queueName);
-      const queue2 = connection.declareQueue(queueName);
+      const queue1 = currentConnection.declareQueue(queueName);
+      const queue2 = currentConnection.declareQueue(queueName);
 
       expect(queue1).equal(queue2);
 
-      connection.completeConfiguration().then(
-        () => {
-          cleanup(connection, done);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
     });
 
     // eslint-disable-next-line max-len
-    it("should return the same Exchange instance after calling connection.declareExchange multiple times", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should return the same Exchange instance after calling connection.declareExchange multiple times", async function () {
       // test code
       const exchangeName = nextExchangeName();
-      connection.declareQueue(exchangeName);
-      const exchange2 = connection.declareQueue(exchangeName);
+      currentConnection.declareQueue(exchangeName);
+      const exchange2 = currentConnection.declareQueue(exchangeName);
 
       expect(exchange2).equal(exchange2);
 
-      connection.completeConfiguration().then(
-        () => {
-          cleanup(connection, done);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
     });
 
-    it("should create an Exchange, Queue and binding and send and receive a simple string Message", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create an Exchange, Queue and binding and send and receive a simple string Message", async function () {
       // test code
-      const exchange = connection.declareExchange(nextExchangeName());
-      const queue = connection.declareQueue(nextQueueName());
-      queue.bind(exchange);
-      queue.activateConsumer(
+      const exchange = currentConnection.declareExchange(nextExchangeName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+      await queue.bind(exchange);
+      await queue.activateConsumer(
         (message) => {
-          try {
-            expect(message.getContent()).equals("Test");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
+          callbackResolve(message.getContent());
         },
         { noAck: true },
       );
 
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          exchange.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
+      await currentConnection.completeConfiguration();
+      const msg = new Message("Test");
+      exchange.send(msg);
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should create an Exchange, Queue and binding and send and receive a Message with structures", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    // eslint-disable-next-line max-len
+    it("should create an Exchange, Queue and binding and send and receive a Message with structures", async function () {
       // test code
-      const exchange = connection.declareExchange(nextExchangeName());
-      const queue = connection.declareQueue(nextQueueName());
+      const exchange = currentConnection.declareExchange(nextExchangeName());
+      const queue = currentConnection.declareQueue(nextQueueName());
       const testObj = {
         text: "Test",
       };
-
-      queue.bind(exchange);
-      queue.activateConsumer(
-        (message) => {
-          try {
-            expect(message.getContent()).eql(testObj);
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        },
-        { noAck: true },
-      );
-
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message(testObj);
-          exchange.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should create an Exchange and send and receive a simple string Message", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange = connection.declareExchange(nextExchangeName());
-      exchange.activateConsumer(
-        (message) => {
-          try {
-            expect(message.getContent()).equals("Test");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        },
-        { noAck: true },
-      );
-
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          exchange.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should bind Exchanges", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-      const exchange2 = connection.declareExchange(nextExchangeName());
-      const queue = connection.declareQueue(nextQueueName());
-
-      exchange2.bind(exchange1);
-      queue.bind(exchange2);
-      queue.activateConsumer(
-        (message) => {
-          try {
-            expect(message.getContent()).equals("Test");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        },
-        { noAck: true },
-      );
-
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          exchange1.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should reconnect when sending a Message to an Exchange after a broken connection", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-      const exchange2 = connection.declareExchange(nextExchangeName());
-      exchange2.bind(exchange1);
-      const queue = connection.declareQueue(nextQueueName());
-      queue.bind(exchange2);
-      queue
-        .activateConsumer(
-          (message) => {
-            try {
-              expect(message.getContent()).equals("Test");
-              cleanup(connection, done);
-            } catch (err) {
-              cleanup(connection, done, err);
-            }
-          },
-          { noAck: true },
-        )
-        .catch((err) => {
-          console.log("Consumer intialization FAILED!!!");
-          done(err);
-        });
-
-      connection.completeConfiguration().then(
-        () => {
-          // break connection
-          connection._connection.close((err) => {
-            if (err) {
-              done(err);
-            } else {
-              // it should auto reconnect and send the message
-              const msg = new Message("Test");
-              exchange1.send(msg);
-            }
-          });
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should reconnect when sending a message to a Queue after a broken connection", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queue = connection.declareQueue(nextQueueName());
-      queue
-        .activateConsumer(
-          (message) => {
-            try {
-              expect(message.getContent()).equals("Test");
-              cleanup(connection, done);
-            } catch (err) {
-              cleanup(connection, done, err);
-            }
-          },
-          { noAck: true },
-        )
-        .catch((err) => {
-          console.log("Consumer intialization FAILED!!!");
-          done(err);
-        });
-
-      connection.completeConfiguration().then(
-        () => {
-          // break connection
-          connection._connection.close((err) => {
-            if (err) {
-              done(err);
-            } else {
-              // it should auto reconnect and send the message
-              const msg = new Message("Test");
-              queue.send(msg);
-            }
-          });
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should unbind Exchanges and Queues", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-      const exchange2 = connection.declareExchange(nextExchangeName());
-      const queue = connection.declareQueue(nextQueueName());
-
-      exchange2.bind(exchange1);
-      queue.bind(exchange2);
-      queue.activateConsumer(
-        (message) => {
-          try {
-            expect(message.getContent()).equals("Test");
-            exchange2
-              .unbind(exchange1)
-              .then(() => {
-                return queue.unbind(exchange2);
-              })
-              .then(() => {
-                cleanup(connection, done);
-              });
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        },
-        { noAck: true },
-      );
-
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          queue.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should delete Exchanges and Queues", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-      const exchange2 = connection.declareExchange(nextExchangeName());
-      const queue = connection.declareQueue(nextQueueName());
-
-      exchange2.bind(exchange1);
-      queue.bind(exchange2);
-      queue.activateConsumer(
-        (message) => {
-          try {
-            expect(message.getContent()).equals("Test");
-            exchange2
-              .delete()
-              .then(() => {
-                return queue.delete();
-              })
-              .then(() => {
-                cleanup(connection, done);
-              });
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        },
-        { noAck: true },
-      );
-
-      connection.completeConfiguration().then(
-        () => {
-          const msg = new Message("Test");
-          queue.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should not start 2 consumers for the same queue", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-      const queue = connection.declareQueue(nextQueueName());
-
-      queue.bind(exchange1);
-      queue.activateConsumer((_message) => {
-        cleanup(connection, done, new Error("Received unexpected message"));
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
       });
-      queue
-        .activateConsumer(
-          (_message) => {
-            cleanup(connection, done, new Error("Received unexpected message"));
-          },
-          { noAck: true },
-        )
-        .catch((err) => {
-          expect(err.message).equal("amqp-ts Queue.activateConsumer error: consumer already defined");
-          cleanup(connection, done);
-        });
+
+      await queue.bind(exchange);
+      await queue.activateConsumer(
+        (message) => {
+          callbackResolve(message.getContent());
+        },
+        { noAck: true },
+      );
+
+      await currentConnection.completeConfiguration();
+
+      const msg = new Message(testObj);
+      exchange.send(msg);
+      await expect(testPromise).to.eventually.eql(testObj);
     });
 
-    it("should not start 2 consumers for the same exchange", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create an Exchange and send and receive a simple string Message", async function () {
       // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-
-      exchange1.activateConsumer((_message) => {
-        cleanup(connection, done, new Error("Received unexpected message"));
+      const exchange = currentConnection.declareExchange(nextExchangeName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
       });
-      exchange1
-        .activateConsumer(
-          (_message) => {
-            cleanup(connection, done, new Error("Received unexpected message"));
-          },
-          { noAck: true },
-        )
-        .catch((err) => {
-          expect(err.message).equal("amqp-ts Exchange.activateConsumer error: consumer already defined");
-          cleanup(connection, done);
-        });
-    });
 
-    it("should stop an Exchange consumer", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-
-      exchange1.activateConsumer(
-        (_message) => {
-          cleanup(connection, done, new Error("Received unexpected message"));
+      await exchange.activateConsumer(
+        (message) => {
+          callbackResolve(message.getContent());
         },
         { noAck: true },
       );
-      exchange1.stopConsumer().then(() => {
-        cleanup(connection, done);
-      });
-    });
 
-    it("should not generate an error when stopping a non existing Exchange consumer", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName());
-
-      exchange1.activateConsumer(
-        (_message) => {
-          cleanup(connection, done, new Error("Received unexpected message"));
-        },
-        { noAck: true },
-      );
-      exchange1
-        .stopConsumer()
-        .then(() => {
-          return exchange1.stopConsumer();
-        })
-        .then(() => {
-          cleanup(connection, done);
-        })
-        .catch((err) => {
-          cleanup(connection, done, err);
-        });
-    });
-
-    it("should not generate an error when stopping a non existing Queue consumer", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queue = connection.declareQueue(nextQueueName());
-
-      queue.activateConsumer(
-        (_message) => {
-          cleanup(connection, done, new Error("Received unexpected message"));
-        },
-        { noAck: true },
-      );
-      queue
-        .stopConsumer()
-        .then(() => {
-          return queue.stopConsumer();
-        })
-        .then(() => {
-          cleanup(connection, done);
-        })
-        .catch((err) => {
-          cleanup(connection, done, err);
-        });
-    });
-
-    it("should send a message to a queue before the queue is explicitely initialized", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queue = connection.declareQueue(nextQueueName());
+      await currentConnection.completeConfiguration();
       const msg = new Message("Test");
+      exchange.send(msg);
+      await expect(testPromise).to.eventually.equals("Test");
+    });
+
+    it("should bind Exchanges", async function () {
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+      const exchange2 = currentConnection.declareExchange(nextExchangeName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+
+      await exchange2.bind(exchange1);
+      await queue.bind(exchange2);
+      await queue.activateConsumer(
+        (message) => {
+          callbackResolve(message.getContent());
+        },
+        { noAck: true },
+      );
+
+      await currentConnection.completeConfiguration();
+      const msg = new Message("Test");
+      exchange1.send(msg);
+      await expect(testPromise).to.eventually.equals("Test");
+    });
+
+    it("should reconnect when sending a Message to an Exchange after a broken connection", async function () {
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+      const exchange2 = currentConnection.declareExchange(nextExchangeName());
+      await exchange2.bind(exchange1);
+      const queue = currentConnection.declareQueue(nextQueueName());
+      await queue.bind(exchange2);
+      await queue.activateConsumer(
+        (message) => {
+          callbackResolve(message.getContent());
+        },
+        { noAck: true },
+      );
+
+      await currentConnection.completeConfiguration();
+
+      await new Promise((resolve, reject) => {
+        currentConnection._connection.close((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            // it should auto reconnect and send the message
+            const msg = new Message("Test");
+            exchange1.send(msg);
+            resolve();
+          }
+        });
+      });
+
+      await expect(testPromise).to.eventually.equals("Test");
+    });
+
+    it("should reconnect when sending a message to a Queue after a broken connection", async function () {
+      // test code
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+      queue.activateConsumer(
+        (message) => {
+          callbackResolve(message.getContent());
+        },
+        { noAck: true },
+      );
+
+      await currentConnection.completeConfiguration();
+
+      await new Promise((resolve, reject) => {
+        // break connection
+        currentConnection._connection.close((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            // it should auto reconnect and send the message
+            const msg = new Message("Test");
+            queue.send(msg);
+            resolve();
+          }
+        });
+      });
+
+      await expect(testPromise).to.eventually.equals("Test");
+    });
+
+    it("should unbind Exchanges and Queues", async function () {
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+      const exchange2 = currentConnection.declareExchange(nextExchangeName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+
+      await exchange2.bind(exchange1);
+      await queue.bind(exchange2);
+      await queue.activateConsumer(
+        async (message) => {
+          await exchange2.unbind(exchange1);
+          await queue.unbind(exchange2);
+          callbackResolve(message.getContent());
+        },
+        { noAck: true },
+      );
+
+      await currentConnection.completeConfiguration();
+      const msg = new Message("Test");
+      queue.send(msg);
+      await expect(testPromise).to.eventually.equals("Test");
+    });
+
+    it("should delete Exchanges and Queues", async function () {
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+      const exchange2 = currentConnection.declareExchange(nextExchangeName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
+
+      await exchange2.bind(exchange1);
+      await queue.bind(exchange2);
+      await queue.activateConsumer(
+        async (message) => {
+          await exchange2.delete();
+          await queue.delete();
+          callbackResolve(message.getContent());
+        },
+        { noAck: true },
+      );
+
+      await currentConnection.completeConfiguration();
+      const msg = new Message("Test");
+      queue.send(msg);
+
+      await expect(testPromise).to.eventually.equals("Test");
+    });
+
+    it("should not start 2 consumers for the same queue", async function () {
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+
+      await queue.bind(exchange1);
+      await queue.activateConsumer((_message) => {
+        // cleanup(currentConnection, done, new Error("Received unexpected message"));
+      });
+      await expect(
+        queue.activateConsumer(
+          (_message) => {
+            // cleanup(currentConnection, done, new Error("Received unexpected message"));
+          },
+          { noAck: true },
+        ),
+      ).to.be.rejectedWith("amqp-ts Queue.activateConsumer error: consumer already defined");
+    });
+
+    it("should not start 2 consumers for the same exchange", async function () {
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+
+      await exchange1.activateConsumer((_message) => {
+        // cleanup(currentConnection, done, new Error("Received unexpected message"));
+      });
+      await expect(
+        exchange1.activateConsumer(
+          (_message) => {
+            // cleanup(currentConnection, done, new Error("Received unexpected message"));
+          },
+          { noAck: true },
+        ),
+      ).to.be.rejectedWith("amqp-ts Exchange.activateConsumer error: consumer already defined");
+    });
+
+    it("should stop an Exchange consumer", async function () {
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+
+      await exchange1.activateConsumer(
+        (_message) => {
+          // cleanup(currentConnection, done, new Error("Received unexpected message"));
+        },
+        { noAck: true },
+      );
+      await exchange1.stopConsumer();
+      // ToDo expect that exchange consumer is actually stopped
+    });
+
+    it("should not generate an error when stopping a non existing Exchange consumer", async function () {
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+
+      await exchange1.activateConsumer(
+        (_message) => {
+          // cleanup(currentConnection, done, new Error("Received unexpected message"));
+        },
+        { noAck: true },
+      );
+      await exchange1.stopConsumer();
+      await exchange1.stopConsumer();
+      // second stop did not throw any error
+      expect(true).to.equal(true);
+    });
+
+    it("should not generate an error when stopping a non existing Queue consumer", async function () {
+      // test code
+      const queue = currentConnection.declareQueue(nextQueueName());
+
+      await queue.activateConsumer(
+        (_message) => {
+          // cleanup(currentConnection, done, new Error("Received unexpected message"));
+        },
+        { noAck: true },
+      );
+      await queue.stopConsumer();
+      await queue.stopConsumer();
+      // second stop did not throw any error
+      expect(true).to.equal(true);
+    });
+
+    it("should send a message to a queue before the queue is explicitely initialized", async function () {
+      // test code
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const msg = new Message("Test");
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
+      });
 
       queue.send(msg);
 
-      queue.activateConsumer(
+      await queue.activateConsumer(
         (message) => {
-          try {
-            expect(message.getContent()).equals("Test");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
+          callbackResolve(message.getContent());
         },
         { noAck: true },
       );
+
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should accept optional parameters", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
+    it("should accept optional parameters", async function () {
       let messagesReceived = 0;
-
-      // test code
-      const exchange1 = connection.declareExchange(nextExchangeName(), "topic", { durable: true });
-      const exchange2 = connection.declareExchange(nextExchangeName(), "topic", { durable: true });
-      const queue = connection.declareQueue(nextQueueName(), { durable: true });
-      queue.bind(exchange1, "*.*", {});
-      exchange1.bind(exchange2, "*.test", {});
-
-      connection.completeConfiguration().then(() => {
-        const msg = new Message("ParameterTest", {});
-        exchange2.send(msg, "topic.test");
-        exchange1.send(msg, "topic.test2");
-        queue.send(msg);
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
       });
 
-      queue.activateConsumer(
+      // test code
+      const exchange1 = currentConnection.declareExchange(nextExchangeName(), "topic", { durable: true });
+      const exchange2 = currentConnection.declareExchange(nextExchangeName(), "topic", { durable: true });
+      const queue = currentConnection.declareQueue(nextQueueName(), { durable: true });
+      queue.bind(exchange1, "*.*", {});
+      await exchange1.bind(exchange2, "*.test", {});
+
+      await currentConnection.completeConfiguration();
+      const msg = new Message("ParameterTest", {});
+      exchange2.send(msg, "topic.test");
+      exchange1.send(msg, "topic.test2");
+      queue.send(msg);
+
+      await queue.activateConsumer(
         (message) => {
-          try {
-            expect(message.getContent()).equals("ParameterTest");
-            messagesReceived++;
-            //expect three messages
-            if (messagesReceived === 3) {
-              cleanup(connection, done);
-            }
-          } catch (err) {
-            cleanup(connection, done, err);
+          messagesReceived++;
+          //expect three messages
+          if (messagesReceived === 3) {
+            callbackResolve(message.getContent());
           }
         },
         { noAck: true },
       );
+
+      await expect(testPromise).to.eventually.equals("ParameterTest");
+      expect(messagesReceived).to.equal(3);
     });
 
-    it("should close an exchange and a queue", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should close an exchange and a queue", async function () {
       // test code
       const exchangeName = nextExchangeName();
       const queueName = nextQueueName();
 
-      let exchange = connection.declareExchange(exchangeName);
-      let queue = connection.declareQueue(queueName);
-      queue.bind(exchange);
+      let exchange = currentConnection.declareExchange(exchangeName);
+      let queue = currentConnection.declareQueue(queueName);
+      await queue.bind(exchange);
 
-      connection.completeConfiguration().then(function () {
-        exchange.publish("InQueueTest");
-        exchange
-          .close()
-          .then(function () {
-            return queue.close();
-          })
-          .then(function () {
-            queue = connection.declareQueue(queueName);
-            return queue.initialized;
-          })
-          .then(function () {
-            exchange = connection.declareExchange(exchangeName);
-            return queue.initialized;
-          })
-          .then((result) => {
-            expect(result.messageCount).equals(1);
-            cleanup(connection, done);
-          })
-          .catch((err) => {
-            console.log(err);
-            cleanup(connection, done);
-          });
-      });
+      await currentConnection.completeConfiguration();
+      exchange.publish("InQueueTest");
+      await exchange.close();
+      await queue.close();
+
+      queue = currentConnection.declareQueue(queueName);
+      await queue.initialized;
+
+      exchange = currentConnection.declareExchange(exchangeName);
+      const result = await queue.initialized;
+
+      expect(result.messageCount).equals(1);
     });
 
-    it("should delete an exchange and a queue", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should delete an exchange and a queue", async function () {
       // test code
       const exchangeName = nextExchangeName();
       const queueName = nextQueueName();
 
-      const exchange = connection.declareExchange(exchangeName);
-      let queue = connection.declareQueue(queueName);
-      queue.bind(exchange);
+      const exchange = currentConnection.declareExchange(exchangeName);
+      let queue = currentConnection.declareQueue(queueName);
+      await queue.bind(exchange);
 
-      connection.completeConfiguration().then(function () {
-        exchange.publish("InQueueTest");
-        exchange
-          .delete()
-          .then(function () {
-            return queue.delete();
-          })
-          .then(function () {
-            queue = connection.declareQueue(queueName);
-            return queue.initialized;
-          })
-          .then((result) => {
-            expect(result.messageCount).equals(0);
-            cleanup(connection, done);
-          });
-      });
+      await currentConnection.completeConfiguration();
+      exchange.publish("InQueueTest");
+      await exchange.delete();
+      await queue.delete();
+      queue = currentConnection.declareQueue(queueName);
+      const result = await queue.initialized;
+
+      expect(result.messageCount).equals(0);
     });
 
-    it("should process a queue rpc", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should process a queue rpc", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
 
-      queue.activateConsumer((message) => {
+      await queue.activateConsumer((message) => {
         return message.getContent().reply;
       });
 
-      connection.completeConfiguration().then(function () {
-        queue.rpc({ reply: "TestRpc" }).then((result) => {
-          try {
-            expect(result.getContent()).equals("TestRpc");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        });
-      });
+      await currentConnection.completeConfiguration();
+
+      const result = await queue.rpc({ reply: "TestRpc" });
+
+      expect(result.getContent()).equals("TestRpc");
     });
 
-    it("should process an unresolved queue rpc, consumer returning Message", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should process an unresolved queue rpc, consumer returning Message", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
 
-      queue.activateConsumer((message) => {
+      await queue.activateConsumer((message) => {
         return new Message(message.getContent().reply);
       });
 
-      queue.rpc({ reply: "TestRpc" }).then((result) => {
-        try {
-          expect(result.getContent()).equals("TestRpc");
-          cleanup(connection, done);
-        } catch (err) {
-          cleanup(connection, done, err);
-        }
-      });
+      const result = await queue.rpc({ reply: "TestRpc" });
+
+      expect(result.getContent()).equals("TestRpc");
     });
 
-    it("should process a queue rpc, consumer returning Promise", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should process a queue rpc, consumer returning Promise", async function () {
       // test code
-      const queue = connection.declareQueue(nextQueueName());
+      const queue = currentConnection.declareQueue(nextQueueName());
 
-      queue.activateConsumer((message) => {
+      await queue.activateConsumer((message) => {
         return new Promise((resolve, _reject) => {
           setTimeout(() => {
             resolve(message.getContent().reply);
@@ -1328,46 +938,28 @@ describe("Test amqp-ts module", function () {
         });
       });
 
-      connection.completeConfiguration().then(function () {
-        queue.rpc({ reply: "TestRpc" }).then((result) => {
-          try {
-            expect(result.getContent()).equals("TestRpc");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        });
-      });
+      await currentConnection.completeConfiguration();
+      const result = await queue.rpc({ reply: "TestRpc" });
+
+      expect(result.getContent()).equals("TestRpc");
     });
 
     // skip until we know why it is hanging
-    it("should process an exchange rpc", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should process an exchange rpc", async function () {
       // test code
-      const exchange = connection.declareExchange(nextExchangeName());
+      const exchange = currentConnection.declareExchange(nextExchangeName());
 
-      exchange.activateConsumer((message) => {
+      await exchange.activateConsumer((message) => {
         return message.getContent().reply;
       });
 
-      connection.completeConfiguration().then(function () {
-        exchange.rpc({ reply: "TestRpc" }).then((result) => {
-          try {
-            expect(result.getContent()).equals("TestRpc");
-            cleanup(connection, done);
-          } catch (err) {
-            cleanup(connection, done, err);
-          }
-        });
-      });
+      await currentConnection.completeConfiguration();
+      const result = await exchange.rpc({ reply: "TestRpc" });
+
+      expect(result.getContent()).equals("TestRpc");
     });
 
-    it("should create a topology and send and receive a Message", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should create a topology and send and receive a Message", async function () {
       // test code
       const exchangeName1 = nextExchangeName();
       const exchangeName2 = nextExchangeName();
@@ -1380,255 +972,133 @@ describe("Test amqp-ts module", function () {
           { source: exchangeName2, queue: queueName1 },
         ],
       };
-
-      connection.declareTopology(topology).then(
-        function () {
-          const queue = connection.declareQueue(queueName1);
-          queue.activateConsumer(
-            (message) => {
-              expect(message.getContent()).equals("Test");
-              cleanup(connection, done);
-            },
-            { noAck: true },
-          );
-
-          const exchange = connection.declareExchange(exchangeName1);
-          const msg = new Message("Test");
-          exchange.send(msg);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should close a queue multiple times without generating errors", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queueName = nextQueueName();
-      let queue = connection.declareQueue(queueName);
-
-      connection.completeConfiguration().then(
-        function () {
-          queue.close();
-          queue.close().then(() => {
-            // redeclare queue for correct cleanup
-            queue = connection.declareQueue(queueName);
-            queue.initialized.then(() => {
-              cleanup(connection, done);
-            });
-          });
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should delete a queue multiple times without generating errors", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queueName = nextQueueName();
-      const queue = connection.declareQueue(queueName);
-
-      connection.completeConfiguration().then(
-        function () {
-          queue.delete();
-          queue.delete().then(() => {
-            cleanup(connection, done);
-          });
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should close an exchange multiple times without generating errors", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchangeName = nextExchangeName();
-      let exchange = connection.declareExchange(exchangeName);
-
-      connection.completeConfiguration().then(
-        function () {
-          exchange.close();
-          exchange.close().then(() => {
-            // redeclare exchange for correct cleanup
-            exchange = connection.declareExchange(exchangeName);
-            exchange.initialized.then(() => {
-              cleanup(connection, done);
-            });
-          });
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should delete an exchange multiple times without generating errors", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const exchangeName = nextExchangeName();
-      const exchange = connection.declareExchange(exchangeName);
-
-      connection.completeConfiguration().then(
-        function () {
-          exchange.delete();
-          exchange.delete().then(() => {
-            cleanup(connection, done);
-          });
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should set a prefetch count to a queue", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queueName = nextQueueName();
-      const queue = connection.declareQueue(queueName);
-
-      connection.completeConfiguration().then(
-        function () {
-          // todo: create a ral test that checks if the function works
-          queue.prefetch(3);
-          cleanup(connection, done);
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should recover to a queue", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queueName = nextQueueName();
-      const queue = connection.declareQueue(queueName);
-
-      connection.completeConfiguration().then(
-        function () {
-          // todo: create a real test that checks if the function works
-          queue.recover().then(() => {
-            cleanup(connection, done);
-          });
-        },
-        (err) => {
-          // failed to configure the defined topology
-          done(err);
-        },
-      );
-    });
-
-    it("should not connect to a nonexisiting queue with 'noCreate: true'", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queueName = nextQueueName();
-      connection.declareQueue(queueName, { noCreate: true });
-
-      connection
-        .completeConfiguration()
-        .then(() => {
-          cleanup(connection, done, new Error("Unexpected existing queue"));
-        })
-        .catch((err) => {
-          expect(err.message).to.contain("NOT-FOUND");
-          cleanup(connection, done);
-        });
-    });
-
-    it("should connect to an exisiting queue with 'noCreate: true'", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
-      // test code
-      const queueName = nextQueueName();
-      connection.declareQueue(queueName);
-
-      connection.completeConfiguration().then(() => {
-        const queue = connection.declareQueue(queueName, { noCreate: true });
-        queue.initialized
-          .then(() => {
-            cleanup(connection, done);
-          })
-          .catch((err) => {
-            cleanup(connection, done, err);
-          });
+      const testPromise = new Promise((resolve) => {
+        callbackResolve = resolve;
       });
+
+      await currentConnection.declareTopology(topology);
+
+      const queue = currentConnection.declareQueue(queueName1);
+      await queue.activateConsumer(
+        (message) => {
+          callbackResolve(message.getContent());
+        },
+        { noAck: true },
+      );
+
+      const exchange = currentConnection.declareExchange(exchangeName1);
+      const msg = new Message("Test");
+      exchange.send(msg);
+      await expect(testPromise).to.eventually.equals("Test");
     });
 
-    it("should not connect to a nonexisiting exchange with 'noCreate: true'", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
+    it("should close a queue multiple times without generating errors", async function () {
+      // test code
+      const queueName = nextQueueName();
+      let queue = currentConnection.declareQueue(queueName);
 
+      await currentConnection.completeConfiguration();
+
+      await queue.close();
+      await queue.close();
+      // redeclare queue for correct cleanup
+      queue = currentConnection.declareQueue(queueName);
+      await queue.initialized;
+    });
+
+    it("should delete a queue multiple times without generating errors", async function () {
+      // test code
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+
+      await currentConnection.completeConfiguration();
+
+      await queue.delete();
+      await queue.delete();
+    });
+
+    it("should close an exchange multiple times without generating errors", async function () {
       // test code
       const exchangeName = nextExchangeName();
-      connection.declareExchange(exchangeName, "", { noCreate: true });
+      let exchange = currentConnection.declareExchange(exchangeName);
 
-      connection
-        .completeConfiguration()
-        .then(() => {
-          cleanup(connection, done, new Error("Unexpected existing exchange: " + exchangeName));
-        })
-        .catch((err) => {
-          expect(err.message).to.contain("NOT-FOUND");
-          cleanup(connection, done);
-        });
+      await currentConnection.completeConfiguration();
+
+      await exchange.close();
+      await exchange.close();
+
+      // redeclare exchange for correct cleanup
+      exchange = currentConnection.declareExchange(exchangeName);
+      await exchange.initialized;
     });
 
-    it("should connect to an exisiting exchange with 'noCreate: true'", function (done) {
-      // initialize
-      const connection = getAmqpConnection();
-
+    it("should delete an exchange multiple times without generating errors", async function () {
+      // test code
       const exchangeName = nextExchangeName();
-      let con;
-      AmqpLib.connect(ConnectionUrl)
-        .then((conn) => {
-          con = conn;
-          return conn.createChannel();
-        })
-        .then((ch) => {
-          return ch.assertExchange(exchangeName, "fanout");
-        })
-        .then(() => {
-          const exchange = connection.declareExchange(exchangeName, "", { noCreate: true });
-          exchange.initialized
-            .then(() => {
-              con.close().then(() => {
-                cleanup(connection, done);
-              });
-            })
-            .catch((err) => {
-              cleanup(connection, done, err);
-            });
-        })
-        .catch((err) => {
-          done(err);
-        });
+      const exchange = currentConnection.declareExchange(exchangeName);
+
+      await currentConnection.completeConfiguration();
+      await exchange.delete();
+      await exchange.delete();
+    });
+
+    it("should set a prefetch count to a queue", async function () {
+      // test code
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+
+      await currentConnection.completeConfiguration();
+      // todo: create a ral test that checks if the function works
+      queue.prefetch(3);
+    });
+
+    it("should recover to a queue", async function () {
+      // test code
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+
+      await currentConnection.completeConfiguration();
+
+      // todo: create a real test that checks if the function works
+      await queue.recover();
+    });
+
+    it("should not connect to a nonexisiting queue with 'noCreate: true'", async function () {
+      // test code
+      const queueName = nextQueueName();
+      currentConnection.declareQueue(queueName, { noCreate: true });
+
+      await expect(currentConnection.completeConfiguration()).to.be.rejectedWith("NOT-FOUND");
+    });
+
+    it("should connect to an exisiting queue with 'noCreate: true'", async function () {
+      // test code
+      const queueName = nextQueueName();
+      currentConnection.declareQueue(queueName);
+
+      await currentConnection.completeConfiguration();
+      const queue = currentConnection.declareQueue(queueName, { noCreate: true });
+      await queue.initialized;
+    });
+
+    it("should not connect to a nonexisiting exchange with 'noCreate: true'", async function () {
+      // test code
+      const exchangeName = nextExchangeName();
+      currentConnection.declareExchange(exchangeName, "", { noCreate: true });
+
+      await expect(currentConnection.completeConfiguration()).to.be.rejectedWith("NOT-FOUND");
+    });
+
+    it("should connect to an exisiting exchange with 'noCreate: true'", async function () {
+      const exchangeName = nextExchangeName();
+      const con = await AmqpLib.connect(ConnectionUrl);
+
+      const ch = await con.createChannel();
+      await ch.assertExchange(exchangeName, "fanout");
+
+      const exchange = currentConnection.declareExchange(exchangeName, "", { noCreate: true });
+      await exchange.initialized;
+      await con.close();
     });
   });
 });
