@@ -9,8 +9,8 @@ export class Message {
   /** for received messages only: the channel it has been received on */
   /** received messages only: original amqplib message */
   public _message: AmqpLib.Message;
+  public properties: any;
   private content: Buffer;
-  private properties: any;
 
   constructor(content?: any, options: any = {}) {
     this.properties = options;
