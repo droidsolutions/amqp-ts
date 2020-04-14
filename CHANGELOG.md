@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/droidsolutions/amqp-ts/compare/v1.0.0...v1.0.1) (2020-04-14)
+
+
+### Bug Fixes
+
+* add publishConfig to mark to package public ([a97ba95](https://github.com/droidsolutions/amqp-ts/commit/a97ba95b18dc005af88af4e3c60ccf599bb4e867))
+
 # 1.0.0 (2020-04-14)
 
 
