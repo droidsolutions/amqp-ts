@@ -4,7 +4,7 @@ import { log, DIRECT_REPLY_TO_QUEUE, ApplicationName } from "../amqp-ts";
 import { Binding } from "../Binding";
 import { Message } from "../Message";
 import { Connection } from "../Connection/Connection";
-import * as AmqpLib from "amqplib/callback_api";
+import * as AmqpLib from "amqplib";
 import * as os from "os";
 import { StartConsumerOptions } from "../Queue/StartConsumerOptions";
 import { ActivateConsumerOptions } from "../Queue/ActivateConsumerOptions";
@@ -37,32 +37,26 @@ export class Exchange {
     this.initialized = new Promise<InitializeResult>((resolve, reject) => {
       this._connection.initialized
         .then(() => {
-          this._connection._connection.createChannel((err, channel) => {
-            /* istanbul ignore if */
-            if (err) {
-              reject(err);
-            } else {
-              this._channel = channel;
-              const callback = (err: Error, ok: InitializeResult): void => {
-                /* istanbul ignore if */
-                if (err) {
+          this._connection._connection.createChannel().then((channel) => {
+            this._channel = channel;
+            if (this._options.noCreate) {
+              this._channel
+                .checkExchange(this._name)
+                .then(resolve)
+                .catch((err: Error) => {
                   log.log("error", "Failed to create exchange '" + this._name + "'.", { module: "amqp-ts" });
                   delete this._connection._exchanges[this._name];
                   reject(err);
-                } else {
-                  resolve(ok);
-                }
-              };
-              if (this._options.noCreate) {
-                this._channel.checkExchange(this._name, callback);
-              } else {
-                this._channel.assertExchange(
-                  this._name,
-                  this._type,
-                  this._options as AmqpLib.Options.AssertExchange,
-                  callback,
-                );
-              }
+                });
+            } else {
+              this._channel
+                .assertExchange(this._name, this._type, this._options as AmqpLib.Options.AssertExchange)
+                .then(resolve)
+                .catch((err: Error) => {
+                  log.log("error", "Failed to create exchange '" + this._name + "'.", { module: "amqp-ts" });
+                  delete this._connection._exchanges[this._name];
+                  reject(err);
+                });
             }
           });
         })
@@ -70,10 +64,34 @@ export class Exchange {
           log.log("warn", "Channel failure, error caused during connection!", {
             module: "amqp-ts",
           });
+          reject(_err);
         });
     });
     this._connection._exchanges[this._name] = this;
   }
+
+  public async init(): Promise<InitializeResult | undefined> {
+    await this._connection.initialized;
+
+    try {
+      let result: InitializeResult | undefined = undefined;
+      this._channel = await this._connection._connection.createChannel();
+      if (this._options.noCreate) {
+        await this._channel.checkExchange(this._name);
+      } else {
+        result = await this._channel.assertExchange(this._name, this._type, this._options);
+      }
+
+      this._connection._exchanges[this._name] = this;
+      return result;
+    } catch (err) {
+      log.log("error", "Failed to create exchange '" + this._name + "'.", { module: "amqp-ts" });
+      delete this._connection._exchanges[this._name];
+
+      throw err;
+    }
+  }
+
   /**
    * deprecated, use 'exchange.send(message: Message, routingKey?: string)' instead
    */
@@ -103,121 +121,125 @@ export class Exchange {
   send(message: Message, routingKey = ""): void {
     message.sendTo(this, routingKey);
   }
-  rpc(requestParameters: any, routingKey = "", callback?: (err, message: Message) => void): Promise<Message> {
-    return new Promise<Message>((resolve, reject) => {
-      function generateUuid(): string {
-        return Math.random().toString() + Math.random().toString() + Math.random().toString();
-      }
-      const processRpc = (): void => {
-        const uuid: string = generateUuid();
-        if (!this._isConsumerInitializedRcp) {
-          this._isConsumerInitializedRcp = true;
-          this._channel.consume(
-            DIRECT_REPLY_TO_QUEUE,
-            (resultMsg) => {
-              const result = new Message(resultMsg.content, resultMsg.fields);
-              result.fields = resultMsg.fields;
-              for (const handler of this._consumer_handlers) {
-                if (handler[0] === resultMsg.properties.correlationId) {
-                  const func: Function = handler[1];
-                  func.apply("", [undefined, result]);
-                }
-              }
-              resolve(result);
-            },
-            { noAck: true },
-            (err, _ok) => {
-              /* istanbul ignore if */
-              if (err) {
-                reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
-              } else {
-                if (callback) {
-                  // send the rpc request
-                  this._consumer_handlers.push([uuid, callback]);
-                }
-                // consumerTag = ok.consumerTag;
-                const message = new Message(requestParameters, {
-                  correlationId: uuid,
-                  replyTo: DIRECT_REPLY_TO_QUEUE,
-                });
-                message.sendTo(this, routingKey);
-              }
-            },
-          );
-        } else {
-          this._consumer_handlers.push([uuid, callback]);
-          const message = new Message(requestParameters, {
-            correlationId: uuid,
-            replyTo: DIRECT_REPLY_TO_QUEUE,
-          });
-          message.sendTo(this, routingKey);
-          resolve(message);
-        }
-      };
+  public async rpc(
+    requestParameters: any,
+    routingKey = "",
+    handler?: (err: Error, message: Message) => void,
+  ): Promise<Message> {
+    function generateUuid(): string {
+      return Math.random().toString() + Math.random().toString() + Math.random().toString();
+    }
 
-      this.initialized.then(processRpc);
-    });
-  }
-  delete(): Promise<void> {
-    if (this._deleting === undefined) {
-      this._deleting = new Promise<void>((resolve, reject) => {
-        this.initialized
-          .then(() => {
-            return Binding.removeBindingsContaining(this);
-          })
-          .then(() => {
-            this._channel.deleteExchange(this._name, {}, (err, _ok) => {
-              /* istanbul ignore if */
-              if (err) {
-                reject(err);
-              } else {
-                this._channel.close((err) => {
-                  delete this.initialized; // invalidate exchange
-                  delete this._connection._exchanges[this._name]; // remove the exchange from our administration
-                  /* istanbul ignore if */
-                  if (err) {
-                    reject(err);
-                  } else {
-                    delete this._channel;
-                    delete this._connection;
-                    resolve(null);
-                  }
-                });
+    await this.initialized;
+
+    const uuid: string = generateUuid();
+
+    try {
+      if (!this._isConsumerInitializedRcp) {
+        this._isConsumerInitializedRcp = true;
+
+        let closeResolve: (msg: Message) => void;
+
+        const promise = new Promise<Message>((resolve) => {
+          closeResolve = resolve;
+        });
+
+        await this._channel.consume(
+          DIRECT_REPLY_TO_QUEUE,
+          (resultMsg) => {
+            const result = new Message(resultMsg.content, resultMsg.fields);
+            result.fields = resultMsg.fields;
+            for (const handler of this._consumer_handlers) {
+              if (handler[0] === resultMsg.properties.correlationId) {
+                const func: Function = handler[1];
+                func.apply("", [undefined, result]);
               }
-            });
-          })
-          .catch((err) => {
-            reject(err);
-          });
+            }
+            closeResolve(result);
+          },
+          { noAck: true },
+        );
+
+        if (handler) {
+          // send the rpc request
+          this._consumer_handlers.push([uuid, handler]);
+        }
+        // consumerTag = ok.consumerTag;
+        const message = new Message(requestParameters, {
+          correlationId: uuid,
+          replyTo: DIRECT_REPLY_TO_QUEUE,
+        });
+        message.sendTo(this, routingKey);
+
+        return promise;
+      } else {
+        this._consumer_handlers.push([uuid, handler]);
+        const message = new Message(requestParameters, {
+          correlationId: uuid,
+          replyTo: DIRECT_REPLY_TO_QUEUE,
+        });
+        message.sendTo(this, routingKey);
+        return message;
+      }
+    } catch (err) {
+      throw new Error("amqp-ts: Queue.rpc error: " + err.message);
+    }
+  }
+  public async delete(): Promise<void> {
+    if (this._deleting === undefined) {
+      let closeResolve: () => void;
+      let closeReject: (err: Error) => void;
+
+      this._deleting = new Promise<void>((resolve, reject) => {
+        closeResolve = resolve;
+        closeReject = reject;
       });
+
+      try {
+        await this.initialized;
+        await Binding.removeBindingsContaining(this);
+
+        await this._channel.deleteExchange(this._name, {});
+
+        await this._channel.close();
+        delete this.initialized; // invalidate exchange
+        delete this._connection._exchanges[this._name]; // remove the exchange from our administration
+
+        delete this._channel;
+        delete this._connection;
+
+        closeResolve();
+      } catch (err) {
+        closeReject(err);
+      }
     }
     return this._deleting;
   }
-  close(): Promise<void> {
+  public async close(): Promise<void> {
     if (this._closing === undefined) {
+      let closeResolve: () => void;
+      let closeReject: (err: Error) => void;
+
       this._closing = new Promise<void>((resolve, reject) => {
-        this.initialized
-          .then(() => {
-            return Binding.removeBindingsContaining(this);
-          })
-          .then(() => {
-            delete this.initialized; // invalidate exchange
-            delete this._connection._exchanges[this._name]; // remove the exchange from our administration
-            this._channel.close((err) => {
-              /* istanbul ignore if */
-              if (err) {
-                reject(err);
-              } else {
-                delete this._channel;
-                delete this._connection;
-                resolve(null);
-              }
-            });
-          })
-          .catch((err) => {
-            reject(err);
-          });
+        closeResolve = resolve;
+        closeReject = reject;
       });
+
+      try {
+        await this.initialized;
+
+        await Binding.removeBindingsContaining(this);
+        delete this.initialized; // invalidate exchange
+        delete this._connection._exchanges[this._name]; // remove the exchange from our administration
+
+        await this._channel.close();
+
+        delete this._channel;
+        delete this._connection;
+        closeResolve();
+      } catch (err) {
+        closeReject(err);
+      }
     }
     return this._closing;
   }

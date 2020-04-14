@@ -7,7 +7,7 @@ import { log } from "../amqp-ts";
 import { Binding } from "../Binding";
 import { Queue } from "../Queue/Queue";
 import { DeclarationOptions as QueueDeclrationOptions } from "../Queue/DeclarationOptions";
-import * as AmqpLib from "amqplib/callback_api";
+import * as AmqpLib from "amqplib";
 
 export class Connection extends EventEmitter {
   initialized: Promise<void>;
@@ -56,12 +56,8 @@ export class Connection extends EventEmitter {
     this._isClosing = false;
     // rebuild the connection
     this.initialized = new Promise<void>((resolve, reject) => {
-      this.tryToConnect(this, 0, (err) => {
-        /* istanbul ignore if */
-        if (err) {
-          this._rebuilding = false;
-          reject(err);
-        } else {
+      this.tryToConnect(this, 0)
+        .then(() => {
           this._rebuilding = false;
           if (this.connectedBefore) {
             log.log("warn", "Connection re-established", { module: "amqp-ts" });
@@ -72,9 +68,13 @@ export class Connection extends EventEmitter {
             this.connectedBefore = true;
           }
           resolve(null);
-        }
-      });
+        })
+        .catch((err) => {
+          this._rebuilding = false;
+          reject(err);
+        });
     });
+
     /* istanbul ignore next */
     this.initialized.catch((err) => {
       log.log("warn", "Error creating connection!", { module: "amqp-ts" });
@@ -83,63 +83,60 @@ export class Connection extends EventEmitter {
     });
     return this.initialized;
   }
-  private tryToConnect(thisConnection: Connection, retry: number, callback: (err: any) => void): void {
-    AmqpLib.connect(thisConnection.url, thisConnection.socketOptions, (err, connection) => {
-      /* istanbul ignore if */
-      if (err) {
-        thisConnection.isConnected = false;
-        // only do every retry once, amqplib can return multiple connection errors for one connection request (error?)
-        if (retry <= this._retry) {
-          //amqpts_log.log("warn" , "Double retry " + retry + ", skipping.", {module: "amqp-ts"});
-          return;
+  private async tryToConnect(thisConnection: Connection, retry: number): Promise<void> {
+    try {
+      const connection = await AmqpLib.connect(thisConnection.url, thisConnection.socketOptions);
+      const restart = (err: Error): void => {
+        log.log("debug", "Connection error occurred.", {
+          module: "amqp-ts",
+        });
+        connection.removeListener("error", restart);
+        //connection.removeListener("end", restart); // not sure this is needed
+        thisConnection._rebuildAll(err); //try to rebuild the topology when the connection  unexpectedly closes
+      };
+      const onClose = (): void => {
+        connection.removeListener("close", onClose);
+        if (!this._isClosing) {
+          thisConnection.emit("lost_connection");
+          restart(new Error("Connection closed by remote host"));
         }
-        log.log("warn", "Connection failed.", { module: "amqp-ts" });
-        this._retry = retry;
-        if (thisConnection.reconnectStrategy.retries === 0 || thisConnection.reconnectStrategy.retries > retry) {
-          log.log(
-            "warn",
-            "Connection retry " + (retry + 1) + " in " + thisConnection.reconnectStrategy.interval + "ms",
-            { module: "amqp-ts" },
-          );
-          thisConnection.emit("trying_connect");
+      };
+      connection.on("error", restart);
+      connection.on("close", onClose);
+      //connection.on("end", restart); // not sure this is needed
+      thisConnection._connection = connection;
+      thisConnection.isConnected = true;
+    } catch (err) {
+      thisConnection.isConnected = false;
+      // only do every retry once, amqplib can return multiple connection errors for one connection request (error?)
+      if (retry <= this._retry) {
+        //amqpts_log.log("warn" , "Double retry " + retry + ", skipping.", {module: "amqp-ts"});
+        return;
+      }
+      log.log("warn", "Connection failed.", { module: "amqp-ts" });
+      this._retry = retry;
+      if (thisConnection.reconnectStrategy.retries === 0 || thisConnection.reconnectStrategy.retries > retry) {
+        log.log("warn", "Connection retry " + (retry + 1) + " in " + thisConnection.reconnectStrategy.interval + "ms", {
+          module: "amqp-ts",
+        });
+        thisConnection.emit("trying_connect");
+        await new Promise((resolve) => {
           setTimeout(
             thisConnection.tryToConnect.bind(this),
             thisConnection.reconnectStrategy.interval,
             thisConnection,
             retry + 1,
-            callback,
+            resolve,
           );
-        } else {
-          //no reconnect strategy, or retries exhausted, so return the error
-          log.log("warn", "Connection failed, exiting: No connection retries left (retry " + retry + ").", {
-            module: "amqp-ts",
-          });
-          callback(err);
-        }
+        });
       } else {
-        const restart = (err: Error): void => {
-          log.log("debug", "Connection error occurred.", {
-            module: "amqp-ts",
-          });
-          connection.removeListener("error", restart);
-          //connection.removeListener("end", restart); // not sure this is needed
-          thisConnection._rebuildAll(err); //try to rebuild the topology when the connection  unexpectedly closes
-        };
-        const onClose = (): void => {
-          connection.removeListener("close", onClose);
-          if (!this._isClosing) {
-            thisConnection.emit("lost_connection");
-            restart(new Error("Connection closed by remote host"));
-          }
-        };
-        connection.on("error", restart);
-        connection.on("close", onClose);
-        //connection.on("end", restart); // not sure this is needed
-        thisConnection._connection = connection;
-        thisConnection.isConnected = true;
-        callback(null);
+        //no reconnect strategy, or retries exhausted, so return the error
+        log.log("warn", "Connection failed, exiting: No connection retries left (retry " + retry + ").", {
+          module: "amqp-ts",
+        });
+        throw err;
       }
-    });
+    }
   }
   _rebuildAll(err: Error): Promise<void> {
     log.log("warn", "Connection error: " + err.message, { module: "amqp-ts" });
@@ -187,22 +184,14 @@ export class Connection extends EventEmitter {
       );
     });
   }
-  close(): Promise<void> {
+  public async close(): Promise<void> {
     this._isClosing = true;
-    return new Promise<void>((resolve, reject) => {
-      this.initialized.then(() => {
-        this._connection.close((err) => {
-          /* istanbul ignore if */
-          if (err) {
-            reject(err);
-          } else {
-            this.isConnected = false;
-            this.emit("close_connection");
-            resolve(null);
-          }
-        });
-      });
-    });
+
+    await this.initialized;
+    await this._connection.close();
+
+    this.isConnected = false;
+    this.emit("close connection");
   }
   /**
    * Make sure the whole defined connection topology is configured:
@@ -217,7 +206,7 @@ export class Connection extends EventEmitter {
     for (const queueId in this._queues) {
       const queue: Queue = this._queues[queueId];
       promises.push(queue.initialized);
-      if (await queue._consumerInitialized) {
+      if (queue._consumerInitialized !== undefined) {
         promises.push(queue._consumerInitialized);
       }
     }
@@ -239,7 +228,7 @@ export class Connection extends EventEmitter {
     }
     for (const queueId in this._queues) {
       const queue: Queue = this._queues[queueId];
-      if (await queue._consumerInitialized) {
+      if (queue._consumerInitialized !== undefined) {
         promises.push(queue.stopConsumer());
       }
       promises.push(queue.delete());

@@ -4,7 +4,7 @@ import { log, DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
 import { Binding } from "../Binding";
 import { Message } from "../Message";
 import { InitializeResult } from "./InitializeResult";
-import * as AmqpLib from "amqplib/callback_api";
+import * as AmqpLib from "amqplib";
 import { DeclarationOptions } from "./DeclarationOptions";
 import { StartConsumerOptions } from "./StartConsumerOptions";
 import { StartConsumerResult } from "./StartConsumerResult";
@@ -29,6 +29,7 @@ export class Queue {
   get name(): string {
     return this._name;
   }
+
   constructor(connection: Connection, name: string, options: DeclarationOptions = {}) {
     this._connection = connection;
     this._name = name;
@@ -36,34 +37,31 @@ export class Queue {
     this._connection._queues[this._name] = this;
     this._initialize();
   }
-  _initialize(): void {
+
+  public _initialize(): void {
     this.initialized = new Promise<InitializeResult>((resolve, reject) => {
       this._connection.initialized
         .then(() => {
-          this._connection._connection.createChannel((err, channel) => {
-            /* istanbul ignore if */
-            if (err) {
+          this._connection._connection.createChannel().then((channel) => {
+            this._channel = channel;
+            const errorHandler = (err: Error): void => {
+              log.log("error", "Failed to create queue '" + this._name + "'.", { module: "amqp-ts" });
+              delete this._connection._queues[this._name];
               reject(err);
-            } else {
-              this._channel = channel;
-              const callback = (err: Error, ok: InitializeResult): void => {
-                /* istanbul ignore if */
-                if (err) {
-                  log.log("error", "Failed to create queue '" + this._name + "'.", { module: "amqp-ts" });
-                  delete this._connection._queues[this._name];
-                  reject(err);
-                } else {
-                  if (this._options.prefetch) {
-                    this._channel.prefetch(this._options.prefetch);
-                  }
-                  resolve(ok);
-                }
-              };
-              if (this._options.noCreate) {
-                this._channel.checkQueue(this._name, callback);
-              } else {
-                this._channel.assertQueue(this._name, this._options as AmqpLib.Options.AssertQueue, callback);
+            };
+            const callback = (ok: InitializeResult): void => {
+              if (this._options.prefetch) {
+                this._channel.prefetch(this._options.prefetch);
               }
+              resolve(ok);
+            };
+            if (this._options.noCreate) {
+              this._channel.checkQueue(this._name).then(callback).catch(errorHandler);
+            } else {
+              this._channel
+                .assertQueue(this._name, this._options as AmqpLib.Options.AssertQueue)
+                .then(callback)
+                .catch(errorHandler);
             }
           });
         })
@@ -71,9 +69,34 @@ export class Queue {
           log.log("warn", "Channel failure, error caused during connection!", {
             module: "amqp-ts",
           });
+          reject(_err);
         });
     });
   }
+
+  public async init(): Promise<InitializeResult> {
+    await this._connection.initialized;
+    try {
+      this._channel = await this._connection._connection.createChannel();
+      let result: InitializeResult;
+      if (this._options.noCreate) {
+        result = await this._channel.checkQueue(this._name);
+      } else {
+        result = await this._channel.assertQueue(this._name, this._options);
+      }
+      if (this._options.prefetch) {
+        this._channel.prefetch(this._options.prefetch);
+      }
+
+      return result;
+    } catch (error) {
+      delete this._connection._queues[this._name];
+      log.log("warn", "Channel failure, error caused during connection!", {
+        module: "amqp-ts",
+      });
+    }
+  }
+
   static _packMessageContent(content: any, options: any): Buffer {
     if (typeof content === "string") {
       content = new Buffer(content);
@@ -120,36 +143,36 @@ export class Queue {
   send(message: Message): void {
     message.sendTo(this);
   }
-  rpc(requestParameters: any): Promise<Message> {
-    return new Promise<Message>((resolve, reject) => {
-      const processRpc = (): void => {
-        let consumerTag: string;
-        this._channel.consume(
-          DIRECT_REPLY_TO_QUEUE,
-          (resultMsg) => {
-            this._channel.cancel(consumerTag);
-            const result = new Message(resultMsg.content, resultMsg.fields);
-            result.fields = resultMsg.fields;
-            resolve(result);
-          },
-          { noAck: true },
-          (err, ok) => {
-            /* istanbul ignore if */
-            if (err) {
-              reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
-            } else {
-              // send the rpc request
-              consumerTag = ok.consumerTag;
-              const message = new Message(requestParameters, {
-                replyTo: DIRECT_REPLY_TO_QUEUE,
-              });
-              message.sendTo(this);
-            }
-          },
-        );
-      };
-      this.initialized.then(processRpc);
+  public async rpc(requestParameters: any): Promise<Message> {
+    await this.initialized;
+
+    let handlerResolve: (msg: Message) => void;
+    const promise = new Promise<Message>((resolve) => {
+      handlerResolve = resolve;
     });
+
+    let consumerTag: string;
+    try {
+      const result = await this._channel.consume(
+        DIRECT_REPLY_TO_QUEUE,
+        (resultMsg) => {
+          this._channel.cancel(consumerTag);
+          const result = new Message(resultMsg.content, resultMsg.fields);
+          result.fields = resultMsg.fields;
+          handlerResolve(result);
+        },
+        { noAck: true },
+      );
+      // send the rpc request
+      consumerTag = result.consumerTag;
+      const message = new Message(requestParameters, {
+        replyTo: DIRECT_REPLY_TO_QUEUE,
+      });
+      message.sendTo(this);
+      return promise;
+    } catch (err) {
+      throw new Error("amqp-ts: Queue.rpc error: " + err.message);
+    }
   }
   prefetch(count: number): void {
     this.initialized.then(() => {
@@ -157,18 +180,10 @@ export class Queue {
       this._options.prefetch = count;
     });
   }
-  recover(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.initialized.then(() => {
-        this._channel.recover((err, _ok) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(null);
-          }
-        });
-      });
-    });
+
+  public async recover(): Promise<void> {
+    await this.initialized;
+    await this._channel.recover();
   }
   /**
    * deprecated, use 'queue.activateConsumer(...)' instead
@@ -204,7 +219,7 @@ export class Queue {
     this._initializeConsumer();
     return this._consumerInitialized;
   }
-  _initializeConsumer(): void {
+  public _initializeConsumer(): void {
     const processedMsgConsumer = (msg: AmqpLib.Message): void => {
       try {
         /* istanbul ignore if */
@@ -276,111 +291,84 @@ export class Queue {
         if (this._isStartConsumer) {
           consumerFunction = this._rawConsumer ? rawMsgConsumer : processedMsgConsumer;
         }
-        this._channel.consume(
-          this._name,
-          consumerFunction,
-          this._consumerOptions as AmqpLib.Options.Consume,
-          (err, ok) => {
-            /* istanbul ignore if */
-            if (err) {
-              reject(err);
-            } else {
-              this._consumerTag = ok.consumerTag;
-              resolve(ok);
-            }
-          },
-        );
+        this._channel
+          .consume(this._name, consumerFunction, this._consumerOptions as AmqpLib.Options.Consume)
+          .then((value: AmqpLib.Replies.Consume) => {
+            this._consumerTag = value.consumerTag;
+            resolve(value);
+          })
+          .catch(reject);
       });
     });
   }
-  async stopConsumer(): Promise<void> {
+
+  public async stopConsumer(): Promise<void> {
     if (this._consumerStopping || !(await this._consumerInitialized)) {
       return Promise.resolve();
     }
     this._consumerStopping = true;
-    return new Promise<void>((resolve, reject) => {
-      this._consumerInitialized.then(() => {
-        this._channel.cancel(this._consumerTag, (err, _ok) => {
-          /* istanbul ignore if */
-          if (err) {
-            reject(err);
-          } else {
-            delete this._consumerInitialized;
-            delete this._consumer;
-            delete this._consumerOptions;
-            delete this._consumerStopping;
-            resolve(null);
-          }
-        });
-      });
-    });
+
+    await this._consumerInitialized;
+    await this._channel.cancel(this._consumerTag);
+    delete this._consumerInitialized;
+    delete this._consumer;
+    delete this._consumerOptions;
+    delete this._consumerStopping;
   }
-  delete(): Promise<DeleteResult> {
+
+  public async delete(): Promise<DeleteResult> {
     if (this._deleting === undefined) {
+      let closeResolve: (res: DeleteResult) => void;
+      let closeReject: (err: Error) => void;
+
       this._deleting = new Promise<DeleteResult>((resolve, reject) => {
-        this.initialized
-          .then(() => {
-            return Binding.removeBindingsContaining(this);
-          })
-          .then(() => {
-            return this.stopConsumer();
-          })
-          .then(() => {
-            return this._channel.deleteQueue(this._name, {}, (err: Error, ok: DeleteResult) => {
-              /* istanbul ignore if */
-              if (err) {
-                reject(err);
-              } else {
-                delete this.initialized; // invalidate queue
-                delete this._connection._queues[this._name]; // remove the queue from our administration
-                this._channel.close((err) => {
-                  /* istanbul ignore if */
-                  if (err) {
-                    reject(err);
-                  } else {
-                    delete this._channel;
-                    delete this._connection;
-                    resolve(ok);
-                  }
-                });
-              }
-            });
-          })
-          .catch((err) => {
-            reject(err);
-          });
+        closeResolve = resolve;
+        closeReject = reject;
       });
+
+      try {
+        await this.initialized;
+        await Binding.removeBindingsContaining(this);
+        await this.stopConsumer();
+
+        const deleteResult = await this._channel.deleteQueue(this._name, {});
+        delete this.initialized; // invalidate queue
+        delete this._connection._queues[this._name]; // remove the queue from our administration
+        await this._channel.close();
+
+        delete this._channel;
+        delete this._connection;
+        closeResolve(deleteResult);
+      } catch (err) {
+        closeReject(err);
+      }
     }
     return this._deleting;
   }
-  close(): Promise<void> {
+  public async close(): Promise<void> {
     if (this._closing === undefined) {
+      let closeResolve: () => void;
+      let closeReject: (err: Error) => void;
+
       this._closing = new Promise<void>((resolve, reject) => {
-        this.initialized
-          .then(() => {
-            return Binding.removeBindingsContaining(this);
-          })
-          .then(() => {
-            return this.stopConsumer();
-          })
-          .then(() => {
-            delete this.initialized; // invalidate queue
-            delete this._connection._queues[this._name]; // remove the queue from our administration
-            this._channel.close((err) => {
-              /* istanbul ignore if */
-              if (err) {
-                reject(err);
-              } else {
-                delete this._channel;
-                delete this._connection;
-                resolve(null);
-              }
-            });
-          })
-          .catch((err) => {
-            reject(err);
-          });
+        closeResolve = resolve;
+        closeReject = reject;
       });
+
+      try {
+        await this.initialized;
+        await Binding.removeBindingsContaining(this);
+        await this.stopConsumer();
+
+        delete this.initialized; // invalidate queue
+        delete this._connection._queues[this._name]; // remove the queue from our administration
+        await this._channel.close();
+        delete this._channel;
+        delete this._connection;
+        closeResolve();
+      } catch (err) {
+        closeReject(err);
+      }
     }
     return this._closing;
   }

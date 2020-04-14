@@ -1,6 +1,6 @@
 import { Queue } from "./Queue/Queue";
 import { log } from "./amqp-ts";
-import * as AmqpLib from "amqplib/callback_api";
+import * as AmqpLib from "amqplib";
 import { Exchange } from "./Exchange/Exchange";
 
 export class Message {

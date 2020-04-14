@@ -10,7 +10,6 @@ import * as Amqp from "../src/amqp-ts";
 import { Connection } from "../src/Connection/Connection";
 import { Topology } from "../src/Connection/Topology";
 import { Message } from "../src/Message";
-import { resolve } from "dns";
 
 /**
  * Until we get a good mock for amqplib we will test using a local rabbitmq instance
@@ -207,16 +206,7 @@ describe("Test amqp-ts module", function () {
 
       await currentConnection.completeConfiguration();
       // break currentConnection
-      await new Promise((resolve, reject) => {
-        currentConnection._connection.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-            // it should auto reconnect and send the message
-          }
-        });
-      });
+      await currentConnection._connection.close();
 
       queue.publish("Test");
       await expect(testPromise).to.eventually.equals("Test");
@@ -233,16 +223,7 @@ describe("Test amqp-ts module", function () {
       });
       await currentConnection.completeConfiguration();
 
-      await new Promise((resolve, reject) => {
-        currentConnection._connection.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-            // it should auto reconnect and send the message
-          }
-        });
-      });
+      await currentConnection._connection.close();
 
       queue.publish("Test");
       await expect(testPromise).to.eventually.equals("Test");
@@ -619,18 +600,10 @@ describe("Test amqp-ts module", function () {
 
       await currentConnection.completeConfiguration();
 
-      await new Promise((resolve, reject) => {
-        currentConnection._connection.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            // it should auto reconnect and send the message
-            const msg = new Message("Test");
-            exchange1.send(msg);
-            resolve();
-          }
-        });
-      });
+      await currentConnection._connection.close();
+      // it should auto reconnect and send the message
+      const msg = new Message("Test");
+      exchange1.send(msg);
 
       await expect(testPromise).to.eventually.equals("Test");
     });
@@ -650,19 +623,11 @@ describe("Test amqp-ts module", function () {
 
       await currentConnection.completeConfiguration();
 
-      await new Promise((resolve, reject) => {
-        // break connection
-        currentConnection._connection.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            // it should auto reconnect and send the message
-            const msg = new Message("Test");
-            queue.send(msg);
-            resolve();
-          }
-        });
-      });
+      // break connection
+      await currentConnection._connection.close();
+      // it should auto reconnect and send the message
+      const msg = new Message("Test");
+      queue.send(msg);
 
       await expect(testPromise).to.eventually.equals("Test");
     });
