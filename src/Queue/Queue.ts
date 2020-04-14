@@ -177,7 +177,7 @@ export class Queue {
     onMessage: (msg: any, channel?: AmqpLib.Channel) => any,
     options: StartConsumerOptions = {},
   ): Promise<StartConsumerResult> {
-    if (this._consumerInitialized) {
+    if (this._consumerInitialized !== undefined) {
       return new Promise<StartConsumerResult>((_, reject) => {
         reject(new Error("amqp-ts Queue.startConsumer error: consumer already defined"));
       });
@@ -194,7 +194,7 @@ export class Queue {
     onMessage: (msg: Message) => any,
     options: ActivateConsumerOptions = {},
   ): Promise<StartConsumerResult> {
-    if (this._consumerInitialized) {
+    if (this._consumerInitialized !== undefined) {
       return new Promise<StartConsumerResult>((_, reject) => {
         reject(new Error("amqp-ts Queue.activateConsumer error: consumer already defined"));
       });
@@ -293,8 +293,8 @@ export class Queue {
       });
     });
   }
-  async stopConsumer(): Promise<void> {
-    if (this._consumerStopping || !(await this._consumerInitialized)) {
+  stopConsumer(): Promise<void> {
+    if (this._consumerStopping || this._consumerInitialized == undefined) {
       return Promise.resolve();
     }
     this._consumerStopping = true;

@@ -208,7 +208,7 @@ export class Connection extends EventEmitter {
    * Make sure the whole defined connection topology is configured:
    * return promise that fulfills after all defined exchanges, queues and bindings are initialized
    */
-  async completeConfiguration(): Promise<any> {
+  completeConfiguration(): Promise<any> {
     const promises: Promise<any>[] = [];
     for (const exchangeId in this._exchanges) {
       const exchange: Exchange = this._exchanges[exchangeId];
@@ -217,7 +217,7 @@ export class Connection extends EventEmitter {
     for (const queueId in this._queues) {
       const queue: Queue = this._queues[queueId];
       promises.push(queue.initialized);
-      if (await queue._consumerInitialized) {
+      if (queue._consumerInitialized !== undefined) {
         promises.push(queue._consumerInitialized);
       }
     }
@@ -231,7 +231,7 @@ export class Connection extends EventEmitter {
    * Delete the whole defined connection topology:
    * return promise that fulfills after all defined exchanges, queues and bindings have been removed
    */
-  async deleteConfiguration(): Promise<any> {
+  deleteConfiguration(): Promise<any> {
     const promises: Promise<any>[] = [];
     for (const bindingId in this._bindings) {
       const binding: Binding = this._bindings[bindingId];
@@ -239,7 +239,7 @@ export class Connection extends EventEmitter {
     }
     for (const queueId in this._queues) {
       const queue: Queue = this._queues[queueId];
-      if (await queue._consumerInitialized) {
+      if (queue._consumerInitialized !== undefined) {
         promises.push(queue.stopConsumer());
       }
       promises.push(queue.delete());
