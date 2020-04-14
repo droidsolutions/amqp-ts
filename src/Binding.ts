@@ -1,6 +1,6 @@
 import { Exchange } from "./Exchange/Exchange";
 import { Queue } from "./Queue/Queue";
-import { log } from "./amqp-ts";
+import { SimpleLogger } from "./LoggerFactory";
 
 export class Binding {
   initialized: Promise<Binding>;
@@ -8,7 +8,11 @@ export class Binding {
   _destination: Exchange | Queue;
   _pattern: string;
   _args: any;
+
+  private log: SimpleLogger;
+
   constructor(destination: Exchange | Queue, source: Exchange, pattern = "", args: any = {}) {
+    this.log = destination._connection.loggerFactory(this.constructor);
     this._source = source;
     this._destination = destination;
     this._pattern = pattern;
@@ -29,10 +33,11 @@ export class Binding {
             (err, _ok) => {
               /* istanbul ignore if */
               if (err) {
-                log.log(
-                  "error",
-                  "Failed to create queue binding (" + this._source._name + "->" + this._destination._name + ")",
-                  { module: "amqp-ts" },
+                this.log.error(
+                  { err },
+                  "Failed to create queue binding (%s->%s)",
+                  this._source._name,
+                  this._destination._name,
                 );
                 delete this._destination._connection._bindings[
                   Binding.id(this._destination, this._source, this._pattern)
@@ -55,10 +60,11 @@ export class Binding {
             (err, _ok) => {
               /* istanbul ignore if */
               if (err) {
-                log.log(
-                  "error",
-                  "Failed to create exchange binding (" + this._source._name + "->" + this._destination._name + ")",
-                  { module: "amqp-ts" },
+                this.log.error(
+                  { err },
+                  "Failed to create exchange binding (%s->%s)",
+                  this._source._name,
+                  this._destination._name,
                 );
                 delete this._destination._connection._bindings[
                   Binding.id(this._destination, this._source, this._pattern)

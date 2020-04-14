@@ -1,6 +1,6 @@
 import { Exchange } from "../Exchange/Exchange";
 import { Connection } from "../Connection/Connection";
-import { log, DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
+import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
 import { Binding } from "../Binding";
 import { Message } from "../Message";
 import { InitializeResult } from "./InitializeResult";
@@ -10,6 +10,7 @@ import { StartConsumerOptions } from "./StartConsumerOptions";
 import { StartConsumerResult } from "./StartConsumerResult";
 import { DeleteResult } from "./DeleteResult";
 import { ActivateConsumerOptions } from "./ActivateConsumerOptions";
+import { SimpleLogger } from "../LoggerFactory";
 
 export class Queue {
   initialized: Promise<InitializeResult>;
@@ -26,10 +27,15 @@ export class Queue {
   _consumerStopping: boolean;
   _deleting: Promise<DeleteResult>;
   _closing: Promise<void>;
+
+  private log: SimpleLogger;
+
   get name(): string {
     return this._name;
   }
+
   constructor(connection: Connection, name: string, options: DeclarationOptions = {}) {
+    this.log = connection.loggerFactory(this.constructor, { queue: name });
     this._connection = connection;
     this._name = name;
     this._options = options;
@@ -49,7 +55,7 @@ export class Queue {
               const callback = (err: Error, ok: InitializeResult): void => {
                 /* istanbul ignore if */
                 if (err) {
-                  log.log("error", "Failed to create queue '" + this._name + "'.", { module: "amqp-ts" });
+                  this.log.error({ err }, "Failed to create queue '%s'.", this._name);
                   delete this._connection._queues[this._name];
                   reject(err);
                 } else {
@@ -67,10 +73,8 @@ export class Queue {
             }
           });
         })
-        .catch((_err) => {
-          log.log("warn", "Channel failure, error caused during connection!", {
-            module: "amqp-ts",
-          });
+        .catch((err) => {
+          this.log.warn(err, "Channel failure, error caused during connection!");
         });
     });
   }
@@ -99,16 +103,12 @@ export class Queue {
       try {
         this._channel.sendToQueue(this._name, content, options);
       } catch (err) {
-        log.log("debug", "Queue publish error: " + err.message, {
-          module: "amqp-ts",
-        });
+        this.log.debug({ err }, "Queue publish error: %s", err.message);
         const queueName = this._name;
         const connection = this._connection;
-        log.log("debug", "Try to rebuild connection, before Call.", {
-          module: "amqp-ts",
-        });
+        this.log.debug("Try to rebuild connection, before Call.");
         connection._rebuildAll(err).then(() => {
-          log.log("debug", "Retransmitting message.", { module: "amqp-ts" });
+          this.log.debug("Retransmitting message.");
           connection._queues[queueName].publish(content, options);
         });
       }
@@ -228,11 +228,11 @@ export class Queue {
             }
           })
           .catch((err) => {
-            log.log("error", "Queue.onMessage RPC promise returned error: " + err.message, { module: "amqp-ts" });
+            this.log.error({ err }, "Queue.onMessage RPC promise returned error: %s", err.message);
           });
       } catch (err) {
         /* istanbul ignore next */
-        log.log("error", "Queue.onMessage consumer function returned error: " + err.message, { module: "amqp-ts" });
+        this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
       }
     };
     const rawMsgConsumer = (msg: AmqpLib.Message): void => {
@@ -240,7 +240,7 @@ export class Queue {
         this._consumer(msg, this._channel);
       } catch (err) {
         /* istanbul ignore next */
-        log.log("error", "Queue.onMessage consumer function returned error: " + err.message, { module: "amqp-ts" });
+        this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
       }
     };
     const activateConsumerWrapper = (msg: AmqpLib.Message): void => {
@@ -263,11 +263,11 @@ export class Queue {
             }
           })
           .catch((err) => {
-            log.log("error", "Queue.onMessage RPC promise returned error: " + err.message, { module: "amqp-ts" });
+            this.log.error({ err }, "Queue.onMessage RPC promise returned error: %s", err.message);
           });
       } catch (err) {
         /* istanbul ignore next */
-        log.log("error", "Queue.onMessage consumer function returned error: " + err.message, { module: "amqp-ts" });
+        this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
       }
     };
     this._consumerInitialized = new Promise<StartConsumerResult>((resolve, reject) => {

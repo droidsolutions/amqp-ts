@@ -1,6 +1,6 @@
 import { DeclarationOptions } from "./DeclarationOptions";
 import { InitializeResult } from "./InitializeResult";
-import { log, DIRECT_REPLY_TO_QUEUE, ApplicationName } from "../amqp-ts";
+import { DIRECT_REPLY_TO_QUEUE, ApplicationName } from "../amqp-ts";
 import { Binding } from "../Binding";
 import { Message } from "../Message";
 import { Connection } from "../Connection/Connection";
@@ -8,6 +8,7 @@ import * as AmqpLib from "amqplib/callback_api";
 import * as os from "os";
 import { StartConsumerOptions } from "../Queue/StartConsumerOptions";
 import { ActivateConsumerOptions } from "../Queue/ActivateConsumerOptions";
+import { SimpleLogger } from "../LoggerFactory";
 
 export class Exchange {
   initialized: Promise<InitializeResult>;
@@ -20,13 +21,19 @@ export class Exchange {
   _options: DeclarationOptions;
   _deleting: Promise<void>;
   _closing: Promise<void>;
+
+  private log: SimpleLogger;
+
   get name(): string {
     return this._name;
   }
   get type(): string {
     return this._type;
   }
-  constructor(connection: Connection, name: string, type?: string, options: DeclarationOptions = {}) {
+
+  constructor(connection: Connection, name: string, type: string, options: DeclarationOptions = {}) {
+    this.log = connection.loggerFactory(this.constructor, { exchange: name });
+
     this._connection = connection;
     this._name = name;
     this._type = type;
@@ -46,7 +53,7 @@ export class Exchange {
               const callback = (err: Error, ok: InitializeResult): void => {
                 /* istanbul ignore if */
                 if (err) {
-                  log.log("error", "Failed to create exchange '" + this._name + "'.", { module: "amqp-ts" });
+                  this.log.error({ err }, "Failed to create exchange '%s'.", this._name);
                   delete this._connection._exchanges[this._name];
                   reject(err);
                 } else {
@@ -66,10 +73,8 @@ export class Exchange {
             }
           });
         })
-        .catch((_err) => {
-          log.log("warn", "Channel failure, error caused during connection!", {
-            module: "amqp-ts",
-          });
+        .catch((err) => {
+          this.log.warn({ err }, "Channel failure, error caused during connection!");
         });
     });
     this._connection._exchanges[this._name] = this;
@@ -88,13 +93,11 @@ export class Exchange {
       try {
         this._channel.publish(this._name, routingKey, content, options);
       } catch (err) {
-        log.log("warn", "Exchange publish error: " + err.message, {
-          module: "amqp-ts",
-        });
+        this.log.warn({ err }, "Exchange publish error: %s", err.message);
         const exchangeName = this._name;
         const connection = this._connection;
         connection._rebuildAll(err).then(() => {
-          log.log("debug", "Retransmitting message.", { module: "amqp-ts" });
+          this.log.debug("Retransmitting message with routing key '%s'.", routingKey);
           connection._exchanges[exchangeName].publish(content, routingKey, options);
         });
       }

@@ -8,6 +8,7 @@ import { ActivateConsumerOptions } from "./Queue/ActivateConsumerOptions";
 import { DeclarationOptions as QueueDeclarationOptions } from "./Queue/DeclarationOptions";
 import { Queue } from "./Queue/Queue";
 import { StartConsumerOptions } from "./Queue/StartConsumerOptions";
+import { LoggerFactory } from "./LoggerFactory";
 
 export {
   ActivateConsumerOptions,
@@ -15,6 +16,7 @@ export {
   Connection,
   Exchange,
   ExchangeDeclarationOptions,
+  LoggerFactory,
   Message,
   Queue,
   QueueDeclarationOptions,

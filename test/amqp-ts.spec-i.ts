@@ -6,10 +6,10 @@
  */
 import * as Chai from "chai";
 const expect = Chai.expect;
-
-import * as Amqp from "../src/amqp-ts";
+ 
 import { Connection } from "../src/Connection/Connection";
 import { Message } from "../src/Message";
+import * as pino from "pino";
 
 /**
  * Test using a local rabbitmq instance
@@ -17,16 +17,25 @@ import { Message } from "../src/Message";
 // define test defaults
 const ConnectionUrl = process.env.AMQPTEST_CONNECTION_URL || "amqp://localhost";
 const UnitTestLongTimeout = process.env.AMQPTEST_LONG_TIMEOUT || 60000;
-const LogLevel = process.env.AMQPTEST_LOGLEVEL || "warn";
-
-// set logging level
-const winston = Amqp.log;
-winston.transports.console.level = LogLevel;
+const LogLevel = process.env.AMQPTEST_LOGLEVEL || "silent";
 
 // needed for server restart tests
 const os = require("os");
 const isWin = os.platform().startsWith("win");
 const cp = require("child_process");
+
+const logger = pino({
+  name: "amqp-ts integration-test",
+  level: LogLevel,
+  formatters: {
+    level: (label, _number) => {
+      return { level: label };
+    },
+  },
+  prettyPrint: { ignore: "hostname" },
+  redact: [],
+  serializers: { err: pino.stdSerializers.err },
+});
 
 /* istanbul ignore next */
 function restartAmqpServer() {
@@ -38,8 +47,8 @@ function restartAmqpServer() {
       cp.execSync("net stop rabbitmq");
       cp.exec("net start rabbitmq");
     } catch (err) {
-      winston.log(
-        "error",
+      logger.error(
+        {err},
         "Unable to shutdown and restart RabbitMQ, possible solution: use elevated permissions (start an admin shell)",
       );
       throw new Error("Unable to restart rabbitmq, error:\n" + err.message);
@@ -48,7 +57,7 @@ function restartAmqpServer() {
     try {
       cp.execSync("./tools/restart-rabbit.sh");
     } catch (err) {
-      winston.log("error", "Unable to shutdown and restart RabbitMQ");
+      logger.error({err}, "Unable to shutdown and restart RabbitMQ");
       throw new Error("Unable to restart rabbitmq, error:\n" + err.message);
     }
   }

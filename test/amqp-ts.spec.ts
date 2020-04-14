@@ -6,10 +6,11 @@
 import * as AmqpLib from "amqplib";
 import * as Chai from "chai";
 import * as chaiAsPromised from "chai-as-promised";
-import * as Amqp from "../src/amqp-ts";
 import { Connection } from "../src/Connection/Connection";
 import { Topology } from "../src/Connection/Topology";
 import { Message } from "../src/Message";
+import { LoggerFactory } from "../src/LoggerFactory";
+import * as pino from "pino";
 
 /**
  * Until we get a good mock for amqplib we will test using a local rabbitmq instance
@@ -18,15 +19,13 @@ import { Message } from "../src/Message";
 const expect = Chai.expect;
 const ConnectionUrl = process.env.AMQPTEST_CONNECTION_URL || "amqp://localhost";
 const UnitTestTimeout = process.env.AMQPTEST_TIMEOUT || 1500;
-const LogLevel = process.env.AMQPTEST_LOGLEVEL || "critical";
+const LogLevel = process.env.AMQPTEST_LOGLEVEL || "silent";
 const testExchangeNamePrefix = process.env.AMQPTEST_EXCHANGE_PREFIX || "TestExchange_";
 const testQueueNamePrefix = process.env.AMQPTEST_QUEUE_PREFIX || "TestQueue_";
 
-// set logging level
-Amqp.log.transports.console.level = LogLevel;
-
 /* istanbul ignore next */
 describe("Test amqp-ts module", function () {
+  let loggerFactory: LoggerFactory;
   this.timeout(UnitTestTimeout); // define default timeout
 
   // create unique queues and exchanges for each test so they do not interfere with each other
@@ -44,7 +43,7 @@ describe("Test amqp-ts module", function () {
   // keep track of the created connections for cleanup
   const connections: Connection[] = [];
   function getAmqpConnection() {
-    const conn = new Connection(ConnectionUrl, {}, { retries: 5, interval: 1500 });
+    const conn = new Connection(ConnectionUrl, {}, { retries: 5, interval: 1500 }, loggerFactory);
     connections.push(conn);
     return conn;
   }
@@ -71,6 +70,28 @@ describe("Test amqp-ts module", function () {
 
   before(function () {
     Chai.use(chaiAsPromised);
+
+    if (LogLevel !== "silent") {
+      const logger = pino({
+        name: "amqp-ts unit-test",
+        level: LogLevel,
+        formatters: {
+          level: (label, _number) => {
+            return { level: label };
+          },
+        },
+        // prettyPrint: { ignore: "hostname" },
+        redact: [],
+        serializers: { err: pino.stdSerializers.err },
+      });
+
+      loggerFactory = (context, meta = {}) => {
+        const className = typeof context === "string" ? context : context.name;
+        meta.context = className;
+
+        return logger.child(meta);
+      };
+    }
   });
 
   beforeEach(function () {

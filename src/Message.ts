@@ -1,7 +1,7 @@
 import { Queue } from "./Queue/Queue";
-import { log } from "./amqp-ts";
 import * as AmqpLib from "amqplib/callback_api";
 import { Exchange } from "./Exchange/Exchange";
+import { SimpleLogger } from "./LoggerFactory";
 
 export class Message {
   content: Buffer;
@@ -11,6 +11,7 @@ export class Message {
   _channel: AmqpLib.Channel;
   /** received messages only: original amqplib message */
   _message: AmqpLib.Message;
+
   constructor(content?: any, options: any = {}) {
     this.properties = options;
     if (content !== undefined) {
@@ -41,16 +42,13 @@ export class Message {
       try {
         destination._channel.publish(exchange, routingKey, this.content, this.properties);
       } catch (err) {
-        log.log("debug", "Publish error: " + err.message, {
-          module: "amqp-ts",
-        });
+        const log: SimpleLogger = destination._connection.loggerFactory(this.constructor);
+        log.debug({ err }, "Publish error: %s", err.message);
         const destinationName = destination._name;
         const connection = destination._connection;
-        log.log("debug", "Try to rebuild connection, before Call.", {
-          module: "amqp-ts",
-        });
+        log.debug("Try to rebuild connection, before Call.");
         connection._rebuildAll(err).then(() => {
-          log.log("debug", "Retransmitting message.", { module: "amqp-ts" });
+          log.debug("Retransmitting message.");
           if (destination instanceof Queue) {
             connection._queues[destinationName].publish(this.content, this.properties);
           } else {
