@@ -13,40 +13,36 @@ import { ActivateConsumerOptions } from "./ActivateConsumerOptions";
 import { SimpleLogger } from "../LoggerFactory";
 
 export class Queue {
-  initialized: Promise<InitializeResult>;
-  _connection: Connection;
-  _channel: AmqpLib.Channel;
-  _name: string;
-  _options: DeclarationOptions;
+  public initialized: Promise<InitializeResult>;
+  public _channel: AmqpLib.Channel;
+  public _consumerInitialized: Promise<StartConsumerResult>;
+  private _name: string;
   _consumer: (msg: any, channel?: AmqpLib.Channel) => any;
-  _isStartConsumer: boolean;
-  _rawConsumer: boolean;
-  _consumerOptions: StartConsumerOptions;
-  _consumerTag: string;
-  _consumerInitialized: Promise<StartConsumerResult>;
-  _consumerStopping: boolean;
-  _deleting: Promise<DeleteResult>;
-  _closing: Promise<void>;
-
+  private _isStartConsumer: boolean;
+  private _rawConsumer: boolean;
+  private _consumerOptions: StartConsumerOptions;
+  private _consumerTag: string;
+  private _consumerStopping: boolean;
+  private _deleting: Promise<DeleteResult>;
+  private _closing: Promise<void>;
   private log: SimpleLogger;
 
-  get name(): string {
+  public get name(): string {
     return this._name;
   }
 
-  constructor(connection: Connection, name: string, options: DeclarationOptions = {}) {
-    this.log = connection.loggerFactory(this.constructor, { queue: name });
-    this._connection = connection;
+  constructor(public connection: Connection, name: string, private options: DeclarationOptions = {}) {
+    this.log = this.connection.loggerFactory(this.constructor, { queue: name });
+    
     this._name = name;
-    this._options = options;
-    this._connection._queues[this._name] = this;
+    this.connection._queues[this._name] = this;
     this._initialize();
   }
   _initialize(): void {
     this.initialized = new Promise<InitializeResult>((resolve, reject) => {
-      this._connection.initialized
+      this.connection.initialized
         .then(() => {
-          this._connection._connection.createChannel((err, channel) => {
+          this.connection.connection.createChannel((err, channel) => {
             /* istanbul ignore if */
             if (err) {
               reject(err);
@@ -56,19 +52,19 @@ export class Queue {
                 /* istanbul ignore if */
                 if (err) {
                   this.log.error({ err }, "Failed to create queue '%s'.", this._name);
-                  delete this._connection._queues[this._name];
+                  delete this.connection._queues[this._name];
                   reject(err);
                 } else {
-                  if (this._options.prefetch) {
-                    this._channel.prefetch(this._options.prefetch);
+                  if (this.options.prefetch) {
+                    this._channel.prefetch(this.options.prefetch);
                   }
                   resolve(ok);
                 }
               };
-              if (this._options.noCreate) {
+              if (this.options.noCreate) {
                 this._channel.checkQueue(this._name, callback);
               } else {
-                this._channel.assertQueue(this._name, this._options as AmqpLib.Options.AssertQueue, callback);
+                this._channel.assertQueue(this._name, this.options as AmqpLib.Options.AssertQueue, callback);
               }
             }
           });
@@ -105,7 +101,7 @@ export class Queue {
       } catch (err) {
         this.log.debug({ err }, "Queue publish error: %s", err.message);
         const queueName = this._name;
-        const connection = this._connection;
+        const connection = this.connection;
         this.log.debug("Try to rebuild connection, before Call.");
         connection._rebuildAll(err).then(() => {
           this.log.debug("Retransmitting message.");
@@ -154,7 +150,7 @@ export class Queue {
   prefetch(count: number): void {
     this.initialized.then(() => {
       this._channel.prefetch(count);
-      this._options.prefetch = count;
+      this.options.prefetch = count;
     });
   }
   recover(): Promise<void> {
@@ -332,14 +328,14 @@ export class Queue {
                 reject(err);
               } else {
                 delete this.initialized; // invalidate queue
-                delete this._connection._queues[this._name]; // remove the queue from our administration
+                delete this.connection._queues[this._name]; // remove the queue from our administration
                 this._channel.close((err) => {
                   /* istanbul ignore if */
                   if (err) {
                     reject(err);
                   } else {
                     delete this._channel;
-                    delete this._connection;
+                    delete this.connection;
                     resolve(ok);
                   }
                 });
@@ -365,14 +361,14 @@ export class Queue {
           })
           .then(() => {
             delete this.initialized; // invalidate queue
-            delete this._connection._queues[this._name]; // remove the queue from our administration
+            delete this.connection._queues[this._name]; // remove the queue from our administration
             this._channel.close((err) => {
               /* istanbul ignore if */
               if (err) {
                 reject(err);
               } else {
                 delete this._channel;
-                delete this._connection;
+                delete this.connection;
                 resolve(null);
               }
             });
@@ -389,6 +385,6 @@ export class Queue {
     return binding.initialized;
   }
   unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
-    return this._connection._bindings[Binding.id(this, source, pattern)].delete();
+    return this.connection._bindings[Binding.id(this, source, pattern)].delete();
   }
 }

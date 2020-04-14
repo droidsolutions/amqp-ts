@@ -6,45 +6,40 @@ import { Message } from "../Message";
 import { Connection } from "../Connection/Connection";
 import * as AmqpLib from "amqplib/callback_api";
 import * as os from "os";
-import { StartConsumerOptions } from "../Queue/StartConsumerOptions";
 import { ActivateConsumerOptions } from "../Queue/ActivateConsumerOptions";
 import { SimpleLogger } from "../LoggerFactory";
 
 export class Exchange {
-  initialized: Promise<InitializeResult>;
-  _consumer_handlers: Array<[string, any]> = new Array<[string, any]>();
-  _isConsumerInitializedRcp = false;
-  _connection: Connection;
-  _channel: AmqpLib.Channel;
-  _name: string;
-  _type: string;
-  _options: DeclarationOptions;
-  _deleting: Promise<void>;
-  _closing: Promise<void>;
-
-  private log: SimpleLogger;
-
-  get name(): string {
+  public initialized: Promise<InitializeResult>;
+  public _channel: AmqpLib.Channel;
+  public get name(): string {
     return this._name;
   }
-  get type(): string {
+  public get type(): string {
     return this._type;
   }
+  
+  private _consumer_handlers: Array<[string, any]> = new Array<[string, any]>();
+  private _isConsumerInitializedRcp = false;
+  private _name: string;
+  private _type: string;
+  private _deleting: Promise<void>;
+  private _closing: Promise<void>;
+  private log: SimpleLogger;
 
-  constructor(connection: Connection, name: string, type: string, options: DeclarationOptions = {}) {
-    this.log = connection.loggerFactory(this.constructor, { exchange: name });
+  constructor(public connection: Connection, name: string, type: string, private options: DeclarationOptions = {}) {
+    this.log = this.connection.loggerFactory(this.constructor, { exchange: name });
 
-    this._connection = connection;
     this._name = name;
     this._type = type;
-    this._options = options;
     this._initialize();
   }
-  _initialize(): void {
+  
+  public _initialize(): void {
     this.initialized = new Promise<InitializeResult>((resolve, reject) => {
-      this._connection.initialized
+      this.connection.initialized
         .then(() => {
-          this._connection._connection.createChannel((err, channel) => {
+          this.connection.connection.createChannel((err, channel) => {
             /* istanbul ignore if */
             if (err) {
               reject(err);
@@ -54,19 +49,19 @@ export class Exchange {
                 /* istanbul ignore if */
                 if (err) {
                   this.log.error({ err }, "Failed to create exchange '%s'.", this._name);
-                  delete this._connection._exchanges[this._name];
+                  delete this.connection._exchanges[this._name];
                   reject(err);
                 } else {
                   resolve(ok);
                 }
               };
-              if (this._options.noCreate) {
+              if (this.options.noCreate) {
                 this._channel.checkExchange(this._name, callback);
               } else {
                 this._channel.assertExchange(
                   this._name,
                   this._type,
-                  this._options as AmqpLib.Options.AssertExchange,
+                  this.options as AmqpLib.Options.AssertExchange,
                   callback,
                 );
               }
@@ -77,12 +72,13 @@ export class Exchange {
           this.log.warn({ err }, "Channel failure, error caused during connection!");
         });
     });
-    this._connection._exchanges[this._name] = this;
+    this.connection._exchanges[this._name] = this;
   }
+  
   /**
    * deprecated, use 'exchange.send(message: Message, routingKey?: string)' instead
    */
-  publish(content: any, routingKey = "", options: any = {}): void {
+  public publish(content: any, routingKey = "", options: any = {}): void {
     if (typeof content === "string") {
       content = new Buffer(content);
     } else if (!(content instanceof Buffer)) {
@@ -95,7 +91,7 @@ export class Exchange {
       } catch (err) {
         this.log.warn({ err }, "Exchange publish error: %s", err.message);
         const exchangeName = this._name;
-        const connection = this._connection;
+        const connection = this.connection;
         connection._rebuildAll(err).then(() => {
           this.log.debug("Retransmitting message with routing key '%s'.", routingKey);
           connection._exchanges[exchangeName].publish(content, routingKey, options);
@@ -103,10 +99,12 @@ export class Exchange {
       }
     });
   }
-  send(message: Message, routingKey = ""): void {
+  
+  public send(message: Message, routingKey = ""): void {
     message.sendTo(this, routingKey);
   }
-  rpc(requestParameters: any, routingKey = "", callback?: (err, message: Message) => void): Promise<Message> {
+  
+  public rpc(requestParameters: any, routingKey = "", callback?: (err, message: Message) => void): Promise<Message> {
     return new Promise<Message>((resolve, reject) => {
       function generateUuid(): string {
         return Math.random().toString() + Math.random().toString() + Math.random().toString();
@@ -161,7 +159,8 @@ export class Exchange {
       this.initialized.then(processRpc);
     });
   }
-  delete(): Promise<void> {
+  
+  public delete(): Promise<void> {
     if (this._deleting === undefined) {
       this._deleting = new Promise<void>((resolve, reject) => {
         this.initialized
@@ -176,13 +175,13 @@ export class Exchange {
               } else {
                 this._channel.close((err) => {
                   delete this.initialized; // invalidate exchange
-                  delete this._connection._exchanges[this._name]; // remove the exchange from our administration
+                  delete this.connection._exchanges[this._name]; // remove the exchange from our administration
                   /* istanbul ignore if */
                   if (err) {
                     reject(err);
                   } else {
                     delete this._channel;
-                    delete this._connection;
+                    delete this.connection;
                     resolve(null);
                   }
                 });
@@ -196,7 +195,7 @@ export class Exchange {
     }
     return this._deleting;
   }
-  close(): Promise<void> {
+  public close(): Promise<void> {
     if (this._closing === undefined) {
       this._closing = new Promise<void>((resolve, reject) => {
         this.initialized
@@ -205,14 +204,14 @@ export class Exchange {
           })
           .then(() => {
             delete this.initialized; // invalidate exchange
-            delete this._connection._exchanges[this._name]; // remove the exchange from our administration
+            delete this.connection._exchanges[this._name]; // remove the exchange from our administration
             this._channel.close((err) => {
               /* istanbul ignore if */
               if (err) {
                 reject(err);
               } else {
                 delete this._channel;
-                delete this._connection;
+                delete this.connection;
                 resolve(null);
               }
             });
@@ -224,45 +223,28 @@ export class Exchange {
     }
     return this._closing;
   }
-  bind(source: Exchange, pattern = "", args: any = {}): Promise<Binding> {
+  public bind(source: Exchange, pattern = "", args: any = {}): Promise<Binding> {
     const binding = new Binding(this, source, pattern, args);
     return binding.initialized;
   }
-  unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
-    return this._connection._bindings[Binding.id(this, source, pattern)].delete();
+  
+  public unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
+    return this.connection._bindings[Binding.id(this, source, pattern)].delete();
   }
-  consumerQueueName(): string {
+  
+  public consumerQueueName(): string {
     return this._name + "." + ApplicationName + "." + os.hostname() + "." + process.pid;
   }
-  /**
-   * deprecated, use 'exchange.activateConsumer(...)' instead
-   */
-  startConsumer(onMessage: (msg: any, channel?: AmqpLib.Channel) => any, options?: StartConsumerOptions): Promise<any> {
+    
+  public activateConsumer(onMessage: (msg: Message) => any, options?: ActivateConsumerOptions): Promise<any> {
     const queueName = this.consumerQueueName();
-    if (this._connection._queues[queueName]) {
-      return new Promise<void>((_, reject) => {
-        reject(new Error("amqp-ts Exchange.startConsumer error: consumer already defined"));
-      });
-    } else {
-      const promises: Promise<any>[] = [];
-      const queue = this._connection.declareQueue(queueName, { durable: false });
-      promises.push(queue.initialized);
-      const binding = queue.bind(this);
-      promises.push(binding);
-      const consumer = queue.startConsumer(onMessage, options);
-      promises.push(consumer);
-      return Promise.all(promises);
-    }
-  }
-  activateConsumer(onMessage: (msg: Message) => any, options?: ActivateConsumerOptions): Promise<any> {
-    const queueName = this.consumerQueueName();
-    if (this._connection._queues[queueName]) {
+    if (this.connection._queues[queueName]) {
       return new Promise<void>((_, reject) => {
         reject(new Error("amqp-ts Exchange.activateConsumer error: consumer already defined"));
       });
     } else {
       const promises: Promise<any>[] = [];
-      const queue = this._connection.declareQueue(queueName, { durable: false });
+      const queue = this.connection.declareQueue(queueName, { durable: false });
       promises.push(queue.initialized);
       const binding = queue.bind(this);
       promises.push(binding);
@@ -271,8 +253,9 @@ export class Exchange {
       return Promise.all(promises);
     }
   }
-  stopConsumer(): Promise<any> {
-    const queue = this._connection._queues[this.consumerQueueName()];
+  
+  public stopConsumer(): Promise<any> {
+    const queue = this.connection._queues[this.consumerQueueName()];
     if (queue) {
       return queue.delete();
     } else {

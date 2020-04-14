@@ -10,26 +10,26 @@ import * as AmqpLib from "amqplib/callback_api";
 import { SimpleLogger, LoggerFactory, EmtpyLogger } from "../LoggerFactory";
 
 export class Connection extends EventEmitter {
-  initialized: Promise<void>;
+  public initialized: Promise<void>;
+  public connection: AmqpLib.Connection;
+  public isConnected = false;
+  public _exchanges: {
+    [id: string]: Exchange;
+  };
+  public _queues: {
+    [id: string]: Queue;
+  };
+  public _bindings: {
+    [id: string]: Binding;
+  };
+
   private url: string;
   private socketOptions: any;
   private reconnectStrategy: ReconnectStrategy;
   private connectedBefore = false;
-  _connection: AmqpLib.Connection;
-  _retry: number;
-  _rebuilding = false;
-  _isClosing = false;
-  public isConnected = false;
-  _exchanges: {
-    [id: string]: Exchange;
-  };
-  _queues: {
-    [id: string]: Queue;
-  };
-  _bindings: {
-    [id: string]: Binding;
-  };
-
+  private _retry: number;
+  private _rebuilding = false;
+  private _isClosing = false;
   private log: SimpleLogger;
 
   /**
@@ -59,45 +59,8 @@ export class Connection extends EventEmitter {
     this._bindings = {};
     this.rebuildConnection();
   }
-  private rebuildConnection(): Promise<void> {
-    if (this._rebuilding) {
-      // only one rebuild process can be active at any time
-      this.log.debug("Connection rebuild already in progress, joining active rebuild attempt.");
-      return this.initialized;
-    }
-    this._retry = -1;
-    this._rebuilding = true;
-    this._isClosing = false;
-    // rebuild the connection
-    this.initialized = new Promise<void>((resolve, reject) => {
-      this.tryToConnect(this, 0, (err) => {
-        /* istanbul ignore if */
-        if (err) {
-          this._rebuilding = false;
-          reject(err);
-        } else {
-          this._rebuilding = false;
-          if (this.connectedBefore) {
-            this.log.warn("Connection re-established");
-            this.emit("re_established_connection");
-          } else {
-            this.log.info("Connection established.");
-            this.emit("open_connection");
-            this.connectedBefore = true;
-          }
-          resolve(null);
-        }
-      });
-    });
-    /* istanbul ignore next */
-    this.initialized.catch((err) => {
-      this.log.warn({ err }, "Error creating connection!");
-      this.emit("error_connection", err);
-      //throw (err);
-    });
-    return this.initialized;
-  }
-  private tryToConnect(thisConnection: Connection, retry: number, callback: (err: any) => void): void {
+  
+  public tryToConnect(thisConnection: Connection, retry: number, callback: (err: any) => void): void {
     AmqpLib.connect(thisConnection.url, thisConnection.socketOptions, (err, connection) => {
       /* istanbul ignore if */
       if (err) {
@@ -141,35 +104,36 @@ export class Connection extends EventEmitter {
         connection.on("error", restart);
         connection.on("close", onClose);
         //connection.on("end", restart); // not sure this is needed
-        thisConnection._connection = connection;
+        thisConnection.connection = connection;
         thisConnection.isConnected = true;
         callback(null);
       }
     });
   }
-  _rebuildAll(err: Error): Promise<void> {
+  
+  public _rebuildAll(err: Error): Promise<void> {
     this.log.warn({ err }, "Connection error: %s", err.message);
     this.log.debug("Rebuilding connection NOW.");
     this.rebuildConnection();
     //re initialize exchanges, queues and bindings if they exist
     for (const exchangeId in this._exchanges) {
       const exchange = this._exchanges[exchangeId];
-      this.log.debug("Re-initialize Exchange '%s'.", exchange._name);
+      this.log.debug("Re-initialize Exchange '%s'.", exchange.name);
       exchange._initialize();
     }
     for (const queueId in this._queues) {
       const queue = this._queues[queueId];
       const consumer = queue._consumer;
-      this.log.debug("Re-initialize queue '%s'.", queue._name);
+      this.log.debug("Re-initialize queue '%s'.", queue.name);
       queue._initialize();
       if (consumer) {
-        this.log.debug("Re-initialize consumer for queue '%s'.", queue._name);
+        this.log.debug("Re-initialize consumer for queue '%s'.", queue.name);
         queue._initializeConsumer();
       }
     }
     for (const bindingId in this._bindings) {
       const binding = this._bindings[bindingId];
-      this.log.debug("Re-initialize binding from '%s' to '%s'.", binding._source._name, binding._destination._name);
+      this.log.debug("Re-initialize binding from '%s' to '%s'.", binding._source.name, binding._destination.name);
       binding._initialize();
     }
     return new Promise<void>((resolve, reject) => {
@@ -185,11 +149,12 @@ export class Connection extends EventEmitter {
       );
     });
   }
-  close(): Promise<void> {
+  
+  public close(): Promise<void> {
     this._isClosing = true;
     return new Promise<void>((resolve, reject) => {
       this.initialized.then(() => {
-        this._connection.close((err) => {
+        this.connection.close((err) => {
           /* istanbul ignore if */
           if (err) {
             reject(err);
@@ -202,11 +167,12 @@ export class Connection extends EventEmitter {
       });
     });
   }
+  
   /**
    * Make sure the whole defined connection topology is configured:
    * return promise that fulfills after all defined exchanges, queues and bindings are initialized
    */
-  completeConfiguration(): Promise<any> {
+  public completeConfiguration(): Promise<any> {
     const promises: Promise<any>[] = [];
     for (const exchangeId in this._exchanges) {
       const exchange: Exchange = this._exchanges[exchangeId];
@@ -225,11 +191,12 @@ export class Connection extends EventEmitter {
     }
     return Promise.all(promises);
   }
+  
   /**
    * Delete the whole defined connection topology:
    * return promise that fulfills after all defined exchanges, queues and bindings have been removed
    */
-  deleteConfiguration(): Promise<any> {
+  public deleteConfiguration(): Promise<any> {
     const promises: Promise<any>[] = [];
     for (const bindingId in this._bindings) {
       const binding: Binding = this._bindings[bindingId];
@@ -248,21 +215,24 @@ export class Connection extends EventEmitter {
     }
     return Promise.all(promises);
   }
-  declareExchange(name: string, type?: string, options?: ExchangeDeclarationOptions): Exchange {
+  
+  public declareExchange(name: string, type?: string, options?: ExchangeDeclarationOptions): Exchange {
     let exchange = this._exchanges[name];
     if (exchange === undefined) {
       exchange = new Exchange(this, name, type, options);
     }
     return exchange;
   }
-  declareQueue(name: string, options?: QueueDeclrationOptions): Queue {
+  
+  public declareQueue(name: string, options?: QueueDeclrationOptions): Queue {
     let queue = this._queues[name];
     if (queue === undefined) {
       queue = new Queue(this, name, options);
     }
     return queue;
   }
-  declareTopology(topology: Topology): Promise<any> {
+  
+  public declareTopology(topology: Topology): Promise<any> {
     const promises: Promise<any>[] = [];
     let i: number;
     let len: number;
@@ -293,7 +263,47 @@ export class Connection extends EventEmitter {
     }
     return Promise.all(promises);
   }
-  get getConnection(): AmqpLib.Connection {
-    return this._connection;
+  
+  public get getConnection(): AmqpLib.Connection {
+    return this.connection;
+  }
+  
+  private rebuildConnection(): Promise<void> {
+    if (this._rebuilding) {
+      // only one rebuild process can be active at any time
+      this.log.debug("Connection rebuild already in progress, joining active rebuild attempt.");
+      return this.initialized;
+    }
+    this._retry = -1;
+    this._rebuilding = true;
+    this._isClosing = false;
+    // rebuild the connection
+    this.initialized = new Promise<void>((resolve, reject) => {
+      this.tryToConnect(this, 0, (err) => {
+        /* istanbul ignore if */
+        if (err) {
+          this._rebuilding = false;
+          reject(err);
+        } else {
+          this._rebuilding = false;
+          if (this.connectedBefore) {
+            this.log.warn("Connection re-established");
+            this.emit("re_established_connection");
+          } else {
+            this.log.info("Connection established.");
+            this.emit("open_connection");
+            this.connectedBefore = true;
+          }
+          resolve(null);
+        }
+      });
+    });
+    /* istanbul ignore next */
+    this.initialized.catch((err) => {
+      this.log.warn({ err }, "Error creating connection!");
+      this.emit("error_connection", err);
+      //throw (err);
+    });
+    return this.initialized;
   }
 }

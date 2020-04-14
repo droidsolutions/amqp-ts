@@ -4,13 +4,13 @@ import { Exchange } from "./Exchange/Exchange";
 import { SimpleLogger } from "./LoggerFactory";
 
 export class Message {
-  content: Buffer;
-  fields: any;
-  properties: any;
+  public fields: any;
+  public _channel: AmqpLib.Channel;
   /** for received messages only: the channel it has been received on */
-  _channel: AmqpLib.Channel;
   /** received messages only: original amqplib message */
-  _message: AmqpLib.Message;
+  public _message: AmqpLib.Message;
+  private content: Buffer;
+  private properties: any;
 
   constructor(content?: any, options: any = {}) {
     this.properties = options;
@@ -18,34 +18,26 @@ export class Message {
       this.setContent(content);
     }
   }
-  setContent(content: any): void {
-    if (typeof content === "string") {
-      this.content = new Buffer(content);
-    } else if (!(content instanceof Buffer)) {
-      this.content = new Buffer(JSON.stringify(content));
-      this.properties.contentType = "application/json";
-    } else {
-      this.content = content;
-    }
-  }
-  getContent(): any {
+  
+  public getContent(): any {
     let content = this.content.toString();
     if (this.properties.contentType === "application/json") {
       content = JSON.parse(content);
     }
     return content;
   }
-  sendTo(destination: Exchange | Queue, routingKey = ""): void {
+  
+  public sendTo(destination: Exchange | Queue, routingKey = ""): void {
     let exchange: string;
     // inline function to send the message
     const sendMessage = (): void => {
       try {
         destination._channel.publish(exchange, routingKey, this.content, this.properties);
       } catch (err) {
-        const log: SimpleLogger = destination._connection.loggerFactory(this.constructor);
+        const log: SimpleLogger = destination.connection.loggerFactory(this.constructor);
         log.debug({ err }, "Publish error: %s", err.message);
-        const destinationName = destination._name;
-        const connection = destination._connection;
+        const destinationName = destination.name;
+        const connection = destination.connection;
         log.debug("Try to rebuild connection, before Call.");
         connection._rebuildAll(err).then(() => {
           log.debug("Retransmitting message.");
@@ -59,26 +51,40 @@ export class Message {
     };
     if (destination instanceof Queue) {
       exchange = "";
-      routingKey = destination._name;
+      routingKey = destination.name;
     } else {
-      exchange = destination._name;
+      exchange = destination.name;
     }
 
     (destination.initialized as Promise<any>).then(sendMessage);
   }
-  ack(allUpTo?: boolean): void {
+  
+  public ack(allUpTo?: boolean): void {
     if (this._channel !== undefined) {
       this._channel.ack(this._message, allUpTo);
     }
   }
-  nack(allUpTo?: boolean, requeue?: boolean): void {
+  
+  public nack(allUpTo?: boolean, requeue?: boolean): void {
     if (this._channel !== undefined) {
       this._channel.nack(this._message, allUpTo, requeue);
     }
   }
-  reject(requeue = false): void {
+  
+  public reject(requeue = false): void {
     if (this._channel !== undefined) {
       this._channel.reject(this._message, requeue);
+    }
+  }
+  
+  private setContent(content: any): void {
+    if (typeof content === "string") {
+      this.content = new Buffer(content);
+    } else if (!(content instanceof Buffer)) {
+      this.content = new Buffer(JSON.stringify(content));
+      this.properties.contentType = "application/json";
+    } else {
+      this.content = content;
     }
   }
 }

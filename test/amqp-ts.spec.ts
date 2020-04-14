@@ -228,7 +228,7 @@ describe("Test amqp-ts module", function () {
       await currentConnection.completeConfiguration();
       // break currentConnection
       await new Promise((resolve, reject) => {
-        currentConnection._connection.close((err) => {
+        currentConnection.connection.close((err) => {
           if (err) {
             reject(err);
           } else {
@@ -254,7 +254,7 @@ describe("Test amqp-ts module", function () {
       await currentConnection.completeConfiguration();
 
       await new Promise((resolve, reject) => {
-        currentConnection._connection.close((err) => {
+        currentConnection.connection.close((err) => {
           if (err) {
             reject(err);
           } else {
@@ -289,21 +289,21 @@ describe("Test amqp-ts module", function () {
       // test code
       const exchange1 = currentConnection.declareExchange(nextExchangeName());
 
-      await exchange1.startConsumer((_message) => {
+      await exchange1.activateConsumer((_message) => {
         // cleanup(currentConnection, done, new Error("Received unexpected message"));
       });
       await expect(
-        exchange1.startConsumer((_message) => {
+        exchange1.activateConsumer((_message) => {
           // cleanup(currentConnection, done, new Error("Received unexpected message"));
         }),
-      ).to.be.rejectedWith("amqp-ts Exchange.startConsumer error: consumer already defined");
+      ).to.be.rejectedWith("amqp-ts Exchange.activateConsumer error: consumer already defined");
     });
 
     it("should stop an Exchange consumer", async function () {
       // test code
       const exchange1 = currentConnection.declareExchange(nextExchangeName());
 
-      await exchange1.startConsumer((_message) => {
+      await exchange1.activateConsumer((_message) => {
         // cleanup(currentConnection, done, new Error("Received unexpected message"));
       });
       await exchange1.stopConsumer();
@@ -316,7 +316,7 @@ describe("Test amqp-ts module", function () {
       // test code
       const exchange1 = currentConnection.declareExchange(nextExchangeName());
 
-      await exchange1.startConsumer((_message) => {
+      await exchange1.activateConsumer((_message) => {
         // cleanup(currentConnection, done, new Error("Received unexpected message"));
       });
       await exchange1.stopConsumer();
@@ -640,7 +640,7 @@ describe("Test amqp-ts module", function () {
       await currentConnection.completeConfiguration();
 
       await new Promise((resolve, reject) => {
-        currentConnection._connection.close((err) => {
+        currentConnection.connection.close((err) => {
           if (err) {
             reject(err);
           } else {
@@ -672,7 +672,7 @@ describe("Test amqp-ts module", function () {
 
       await new Promise((resolve, reject) => {
         // break connection
-        currentConnection._connection.close((err) => {
+        currentConnection.connection.close((err) => {
           if (err) {
             reject(err);
           } else {
