@@ -27,7 +27,7 @@ export class Exchange {
   private _closing: Promise<void>;
   private log: SimpleLogger;
 
-  constructor(public connection: Connection, name: string, type: string, private options: DeclarationOptions = {}) {
+  constructor(public connection: Connection, name: string, type?: string, private options: DeclarationOptions = {}) {
     this.log = this.connection.loggerFactory(this.constructor, { exchange: name });
 
     this._name = name;
