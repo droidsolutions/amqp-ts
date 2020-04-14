@@ -3,7 +3,7 @@
 ![Main](https://github.com/droidsolutions/amqp-ts/workflows/Main/badge.svg)
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
 
-This is a fork of [amqp-ts](https://github.com/abreits/amqp-ts.
+This is a fork of [amqp-ts](https://github.com/abreits/amqp-ts).
 
 ## Table of Contents
 
@@ -17,9 +17,9 @@ Amqp-ts is a library for nodejs that simplifies communication with AMQP message 
 
 Changes to the [original amqp-ts](https://github.com/abreits/amqp-ts) package:
 
-- using up-to-date [amqplib](http://www.squaremobius.net/amqp.node/) (unfortunately the original package uses a four year old version the only support outdated NodeJS version)
+- using up-to-date [amqplib](http://www.squaremobius.net/amqp.node/) (unfortunately the original package uses a four year old version that only support outdated NodeJS version)
 - dropped support for outdated NodeJS versions (Compile target in tsconfig is ES2018 which is fully supported by Node 10).
-- dropped winston as dependency, instead a factory must be provided to the connection constructor which returns any logger.
+- dropped winston as dependency, instead a factory can be provided to the connection constructor which returns any logger.
 
 ### Defining Features
 
@@ -46,7 +46,7 @@ sure that the queue is connected to the exchange before you send a message to th
 
 ##### Typescript Example
 
-```TypeScript
+```ts
 import { Connection, Message } from "amqp-ts";
 
 var connection = new Connection("amqp://localhost");
@@ -74,7 +74,7 @@ More examples can be found in the [tutorials directory](https://github.com/abrei
 
 ### Logging
 
-The last argument of the `Connection` constructor takes a logger factory function. If you specify it, the function should return a logger that matches the `SimpleLogger` interface. This type is heavily inspired by the style of [Pino](https://github.com/pinojs/pino), but you can write a wrapper for any logger you'd like. It should support `%s`, `%d` and `%o` transformation, as they are used for internal log messages.
+The last argument of the `Connection` constructor takes a logger factory function. If you specify it, the function should return a logger that matches the `SimpleLogger` interface. This type is heavily inspired by the style of [Pino](https://github.com/pinojs/pino), but you can write a wrapper for any logger you like. It should support `%s`, `%d` and `%o` string interpolation, as they are used for internal log messages.
 
 If you do not specify a logger factory, no logs are emitted.
 
@@ -106,7 +106,7 @@ loggerFactory = (context, meta) => {
 const connection = new Connection("amqp://localhost", {}, { retries: 0, interval: 1500 }, loggerFactory);
 ```
 
-The above exmplae would result in log messages like these:
+The above example would result in log messages like these:
 
 ```json
 {
