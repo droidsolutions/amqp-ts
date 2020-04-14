@@ -10,7 +10,6 @@ import * as Amqp from "../src/amqp-ts";
 import { Connection } from "../src/Connection/Connection";
 import { Topology } from "../src/Connection/Topology";
 import { Message } from "../src/Message";
-import { resolve } from "dns";
 
 /**
  * Until we get a good mock for amqplib we will test using a local rabbitmq instance
@@ -420,10 +419,10 @@ describe("Test amqp-ts module", function () {
         callbackResolveUnnacked = resolve;
       });
 
-      queue.activateConsumer((message) => {
+      await queue.activateConsumer((message) => {
         if (nacked) {
-          callbackResolve(message.getContent());
           message.ack();
+          callbackResolve(message.getContent());
         } else {
           callbackResolveUnnacked(message.getContent());
           message.nack(false, false);
@@ -449,8 +448,8 @@ describe("Test amqp-ts module", function () {
       });
 
       await queue.activateConsumer((message) => {
-        callbackResolve(message.getContent());
         message.reject(false);
+        callbackResolve(message.getContent());
       });
 
       await currentConnection.completeConfiguration();
