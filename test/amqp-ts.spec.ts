@@ -429,23 +429,27 @@ describe("Test amqp-ts module", function () {
     });
 
     it("should create not resend a nack(false) message", async function () {
-      // test code
       const queue = currentConnection.declareQueue(nextQueueName());
       let nacked = false;
-      const testPromiseNacked = new Promise((resolve) => {
-        callbackResolve = resolve;
+
+      let callbackResolveAcked: (value?: any) => void;
+      const testPromiseAcked = new Promise((resolve) => {
+        callbackResolveAcked = resolve;
       });
-      let callbackResolveUnnacked: (value?: any) => void;
-      const testPromiseUnnacked = new Promise((resolve) => {
-        callbackResolveUnnacked = resolve;
+      let callbackResolveNacked: (value?: any) => void;
+      const testPromiseNacked = new Promise((resolve2) => {
+        callbackResolveNacked = resolve2;
       });
 
       await queue.activateConsumer((message) => {
+        const content = message.getContent();
         if (nacked) {
+          // expect(content).to.equal("Test Finished", "Content of acked message inside message handler does not match");
           message.ack();
-          callbackResolve(message.getContent());
+          callbackResolveAcked(content);
         } else {
-          callbackResolveUnnacked(message.getContent());
+          // expect(content).to.equal("Test", "Content of nacked message inside message handler does not match");
+          callbackResolveNacked(content);
           message.nack(false, false);
           nacked = true;
           const msg = new Message("Test Finished");
@@ -457,12 +461,14 @@ describe("Test amqp-ts module", function () {
 
       const msg = new Message("Test");
       queue.send(msg);
-      await expect(testPromiseUnnacked).to.eventually.equals("Test");
-      await expect(testPromiseNacked).to.eventually.equals("Test Finished");
+
+      const nackedContent = await testPromiseNacked;
+      expect(nackedContent).to.equal("Test");
+      const ackedContent = await testPromiseAcked;
+      expect(ackedContent).to.equal("Test Finished");
     });
 
     it("should create a Queue and send and receive a simple text Message with reject", async function () {
-      // test code
       const queue = currentConnection.declareQueue(nextQueueName());
       const testPromise = new Promise((resolve) => {
         callbackResolve = resolve;
@@ -502,6 +508,7 @@ describe("Test amqp-ts module", function () {
 
       const msg = new Message(testObj);
       queue.send(msg);
+
       await expect(testPromise).to.eventually.eql(testObj);
     });
 
