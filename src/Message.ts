@@ -10,7 +10,7 @@ export class Message {
   /** received messages only: original amqplib message */
   public _message: AmqpLib.Message;
   public properties: any;
-  private content: Buffer;
+  public content: Buffer;
 
   constructor(content?: any, options: any = {}) {
     this.properties = options;
