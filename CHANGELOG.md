@@ -1,3 +1,12 @@
+## [1.0.2](https://github.com/droidsolutions/amqp-ts/compare/v1.0.1...v1.0.2) (2020-04-15)
+
+
+### Bug Fixes
+
+* make message content public again ([8f19be1](https://github.com/droidsolutions/amqp-ts/commit/8f19be18ea0e591308ddfd72dcc5cc955133fa03))
+* make properties of Message public again ([7b3b6ef](https://github.com/droidsolutions/amqp-ts/commit/7b3b6efb24944eefa55c447c2573985bbfc4c1e2))
+* make type constructor arg for Exchange optional again ([6cbeae5](https://github.com/droidsolutions/amqp-ts/commit/6cbeae5296b4befa907352ff8e8dde77fb254d40))
+
 ## [1.0.1](https://github.com/droidsolutions/amqp-ts/compare/v1.0.0...v1.0.1) (2020-04-14)
 
 
