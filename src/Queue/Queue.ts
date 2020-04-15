@@ -32,7 +32,7 @@ export class Queue {
 
   constructor(public connection: Connection, name: string, private options: DeclarationOptions = {}) {
     this.log = this.connection.loggerFactory(this.constructor, { queue: name });
-    
+
     this._name = name;
     this.connection._queues[this._name] = this;
     this._initialize();
@@ -89,32 +89,11 @@ export class Queue {
     }
     return content;
   }
-  /**
-   * deprecated, use 'queue.send(message: Message)' instead
-   */
-  publish(content: any, options: any = {}): void {
-    // inline function to send the message
-    const sendMessage = (): void => {
-      try {
-        this._channel.sendToQueue(this._name, content, options);
-      } catch (err) {
-        this.log.debug({ err }, "Queue publish error: %s", err.message);
-        const queueName = this._name;
-        const connection = this.connection;
-        this.log.debug("Try to rebuild connection, before Call.");
-        connection._rebuildAll(err).then(() => {
-          this.log.debug("Retransmitting message.");
-          connection._queues[queueName].publish(content, options);
-        });
-      }
-    };
-    content = Queue._packMessageContent(content, options);
-    // execute sync when possible
-    this.initialized.then(sendMessage);
-  }
+  
   send(message: Message): void {
     message.sendTo(this);
   }
+  
   rpc(requestParameters: any): Promise<Message> {
     return new Promise<Message>((resolve, reject) => {
       const processRpc = (): void => {
@@ -165,40 +144,19 @@ export class Queue {
       });
     });
   }
-  /**
-   * deprecated, use 'queue.activateConsumer(...)' instead
-   */
-  startConsumer(
-    onMessage: (msg: any, channel?: AmqpLib.Channel) => any,
-    options: StartConsumerOptions = {},
-  ): Promise<StartConsumerResult> {
+  
+  public activateConsumer(onMessage: (msg: Message) => any, options: StartConsumerOptions = {}): Promise<StartConsumerResult> {
     if (this._consumerInitialized !== undefined) {
-      return new Promise<StartConsumerResult>((_, reject) => {
-        reject(new Error("amqp-ts Queue.startConsumer error: consumer already defined"));
-      });
+      return Promise.reject(new Error("amqp-ts Queue.activateConsumer error: consumer already defined"));
     }
-    this._isStartConsumer = true;
-    this._rawConsumer = options.rawMessage === true;
-    delete options.rawMessage; // remove to avoid possible problems with amqplib
+    
     this._consumerOptions = options;
     this._consumer = onMessage;
     this._initializeConsumer();
+
     return this._consumerInitialized;
   }
-  activateConsumer(
-    onMessage: (msg: Message) => any,
-    options: StartConsumerOptions = {},
-  ): Promise<StartConsumerResult> {
-    if (this._consumerInitialized !== undefined) {
-      return new Promise<StartConsumerResult>((_, reject) => {
-        reject(new Error("amqp-ts Queue.activateConsumer error: consumer already defined"));
-      });
-    }
-    this._consumerOptions = options;
-    this._consumer = onMessage;
-    this._initializeConsumer();
-    return this._consumerInitialized;
-  }
+  
   _initializeConsumer(): void {
     const processedMsgConsumer = (msg: AmqpLib.Message): void => {
       try {
@@ -230,6 +188,7 @@ export class Queue {
         this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
       }
     };
+    
     const rawMsgConsumer = (msg: AmqpLib.Message): void => {
       try {
         this._consumer(msg, this._channel);
@@ -238,6 +197,7 @@ export class Queue {
         this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
       }
     };
+    
     const activateConsumerWrapper = (msg: AmqpLib.Message): void => {
       try {
         const message = new Message(msg.content, msg.properties);
@@ -265,6 +225,7 @@ export class Queue {
         this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
       }
     };
+    
     this._consumerInitialized = new Promise<StartConsumerResult>((resolve, reject) => {
       this.initialized.then(() => {
         let consumerFunction = activateConsumerWrapper;

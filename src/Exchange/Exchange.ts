@@ -75,31 +75,6 @@ export class Exchange {
     this.connection._exchanges[this._name] = this;
   }
   
-  /**
-   * deprecated, use 'exchange.send(message: Message, routingKey?: string)' instead
-   */
-  public publish(content: any, routingKey = "", options: any = {}): void {
-    if (typeof content === "string") {
-      content = new Buffer(content);
-    } else if (!(content instanceof Buffer)) {
-      content = new Buffer(JSON.stringify(content));
-      options.contentType = options.contentType || "application/json";
-    }
-    this.initialized.then(() => {
-      try {
-        this._channel.publish(this._name, routingKey, content, options);
-      } catch (err) {
-        this.log.warn({ err }, "Exchange publish error: %s", err.message);
-        const exchangeName = this._name;
-        const connection = this.connection;
-        connection._rebuildAll(err).then(() => {
-          this.log.debug("Retransmitting message with routing key '%s'.", routingKey);
-          connection._exchanges[exchangeName].publish(content, routingKey, options);
-        });
-      }
-    });
-  }
-  
   public send(message: Message, routingKey = ""): void {
     message.sendTo(this, routingKey);
   }

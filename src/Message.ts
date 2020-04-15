@@ -42,9 +42,11 @@ export class Message {
         connection._rebuildAll(err).then(() => {
           log.debug("Retransmitting message.");
           if (destination instanceof Queue) {
-            connection._queues[destinationName].publish(this.content, this.properties);
+            // connection._queues[destinationName].publish(this.content, this.properties);
+            connection._queues[destinationName].send(this);
           } else {
-            connection._exchanges[destinationName].publish(this.content, routingKey, this.properties);
+            // connection._exchanges[destinationName].publish(this.content, routingKey, this.properties);
+            connection._exchanges[destinationName].send(this);
           }
         });
       }

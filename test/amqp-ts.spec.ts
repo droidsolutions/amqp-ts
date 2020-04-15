@@ -137,204 +137,6 @@ describe("Test amqp-ts module", function () {
     });
   });
 
-  describe("AMQP Deprecated usage tests", function () {
-    it("should create a Queue and send and receive simple string messages", async function () {
-      // test code
-      const queue = currentConnection.declareQueue(nextQueueName());
-
-      const testPromise = new Promise((resolve) => {
-        callbackResolve = resolve;
-      });
-
-      await queue.startConsumer((message) => {
-        callbackResolve(message);
-      });
-      await currentConnection.completeConfiguration();
-
-      queue.publish("Test");
-      await expect(testPromise).to.eventually.equal("Test");
-    });
-
-    it("should create a Queue and send and receive simple string objects", async function () {
-      // test code
-      const queue = currentConnection.declareQueue(nextQueueName());
-      const testObj = {
-        text: "Test",
-      };
-      const testPromise = new Promise((resolve) => {
-        callbackResolve = resolve;
-      });
-
-      await queue.startConsumer((message) => {
-        callbackResolve(message);
-      });
-      await currentConnection.completeConfiguration();
-      queue.publish(testObj);
-      await expect(testPromise).to.eventually.eql(testObj);
-    });
-
-    it("should create a Queue, send a simple string message and receive the raw message", async function () {
-      // test code
-      const queue = currentConnection.declareQueue(nextQueueName());
-      const testPromise = new Promise((resolve) => {
-        callbackResolve = resolve;
-      });
-
-      const rawConsumer = (message: AmqpLib.Message, channel: AmqpLib.Channel) => {
-        callbackResolve(message.content.toString());
-        channel.ack(message);
-      };
-
-      await queue.startConsumer(rawConsumer, { rawMessage: true });
-      await currentConnection.completeConfiguration();
-      queue.publish("Test");
-      await expect(testPromise).to.eventually.equals("Test");
-    });
-
-    it("should create a Queue, send a simple string message and receive the raw message 2", async function () {
-      // test code
-      const queue = currentConnection.declareQueue(nextQueueName());
-      const testPromise = new Promise((resolve) => {
-        callbackResolve = resolve;
-      });
-
-      const rawConsumer = (message: AmqpLib.Message, channel: AmqpLib.Channel) => {
-        callbackResolve(message.content.toString());
-        channel.ack(message);
-      };
-
-      await queue.startConsumer(rawConsumer, { rawMessage: true });
-      await currentConnection.completeConfiguration();
-      queue.publish("Test");
-      await expect(testPromise).to.eventually.equals("Test");
-    });
-
-    it("should reconnect when sending a message to an Exchange after a broken connection", async function () {
-      const testPromise = new Promise((resolve) => {
-        callbackResolve = resolve;
-      });
-
-      // test code
-      const exchange1 = currentConnection.declareExchange(nextExchangeName());
-      const exchange2 = currentConnection.declareExchange(nextExchangeName());
-      await exchange2.bind(exchange1);
-      const queue = currentConnection.declareQueue(nextQueueName());
-      await queue.bind(exchange1);
-
-      await queue.startConsumer((message) => {
-        callbackResolve(message);
-      });
-
-      await currentConnection.completeConfiguration();
-      // break currentConnection
-      await new Promise((resolve, reject) => {
-        currentConnection.connection.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-            // it should auto reconnect and send the message
-          }
-        });
-      });
-
-      queue.publish("Test");
-      await expect(testPromise).to.eventually.equals("Test");
-    });
-
-    it("should reconnect when sending a message to a Queue after a broken connection", async function () {
-      const queue = currentConnection.declareQueue(nextQueueName());
-      const testPromise = new Promise((resolve) => {
-        callbackResolve = resolve;
-      });
-
-      await queue.startConsumer((message) => {
-        callbackResolve(message);
-      });
-      await currentConnection.completeConfiguration();
-
-      await new Promise((resolve, reject) => {
-        currentConnection.connection.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-            // it should auto reconnect and send the message
-          }
-        });
-      });
-
-      queue.publish("Test");
-      await expect(testPromise).to.eventually.equals("Test");
-    });
-
-    it("should not start 2 consumers for the same queue", async function () {
-      // test code
-      const exchange1 = currentConnection.declareExchange(nextExchangeName());
-      const queue = currentConnection.declareQueue(nextQueueName());
-
-      await queue.bind(exchange1);
-      await queue.startConsumer((_message) => {
-        // cleanup(currentConnection, done, new Error("Received unexpected message"));
-      });
-
-      await expect(
-        queue.startConsumer((_message) => {
-          // cleanup(currentConnection, done, new Error("Received unexpected message"));
-        }),
-      ).to.be.rejectedWith("amqp-ts Queue.startConsumer error: consumer already defined");
-    });
-
-    it("should not start 2 consumers for the same exchange", async function () {
-      // test code
-      const exchange1 = currentConnection.declareExchange(nextExchangeName());
-
-      await exchange1.activateConsumer((_message) => {
-        // cleanup(currentConnection, done, new Error("Received unexpected message"));
-      });
-      await expect(
-        exchange1.activateConsumer((_message) => {
-          // cleanup(currentConnection, done, new Error("Received unexpected message"));
-        }),
-      ).to.be.rejectedWith("amqp-ts Exchange.activateConsumer error: consumer already defined");
-    });
-
-    it("should stop an Exchange consumer", async function () {
-      // test code
-      const exchange1 = currentConnection.declareExchange(nextExchangeName());
-
-      await exchange1.activateConsumer((_message) => {
-        // cleanup(currentConnection, done, new Error("Received unexpected message"));
-      });
-      await exchange1.stopConsumer();
-
-      // ToDo check if consumer is really stopped
-      expect(true).to.equal(true);
-    });
-
-    it("should not generate an error when stopping a non existing Exchange consumer", async function () {
-      // test code
-      const exchange1 = currentConnection.declareExchange(nextExchangeName());
-
-      await exchange1.activateConsumer((_message) => {
-        // cleanup(currentConnection, done, new Error("Received unexpected message"));
-      });
-      await exchange1.stopConsumer();
-      await expect(exchange1.stopConsumer()).to.eventually.be.undefined;
-    });
-
-    it("should not generate an error when stopping a non existing Queue consumer", async function () {
-      // test code
-      const queue = currentConnection.declareQueue(nextQueueName());
-
-      await queue.startConsumer((_message) => {
-        // cleanup(currentConnection, done, new Error("Received unexpected message"));
-      });
-      await queue.stopConsumer();
-      await expect(queue.stopConsumer()).to.eventually.be.undefined;
-    });
-  });
-
   describe("AMQP usage", function () {
     /**
      * normal practice is to test each feature isolated.
@@ -893,7 +695,8 @@ describe("Test amqp-ts module", function () {
       await queue.bind(exchange);
 
       await currentConnection.completeConfiguration();
-      exchange.publish("InQueueTest");
+      // exchange.publish("InQueueTest");
+      exchange.send(new Message("InQueueTest"));
       await exchange.close();
       await queue.close();
 
@@ -916,7 +719,8 @@ describe("Test amqp-ts module", function () {
       await queue.bind(exchange);
 
       await currentConnection.completeConfiguration();
-      exchange.publish("InQueueTest");
+      // exchange.publish("InQueueTest");
+      exchange.send(new Message("InQueueTest"));
       await exchange.delete();
       await queue.delete();
       queue = currentConnection.declareQueue(queueName);

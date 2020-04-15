@@ -21,6 +21,7 @@ Changes to the [original amqp-ts](https://github.com/abreits/amqp-ts) package:
 - using up-to-date [amqplib](http://www.squaremobius.net/amqp.node/) (unfortunately the original package uses a four year old version that only support outdated NodeJS version)
 - dropped support for outdated NodeJS versions (Compile target in tsconfig is ES2018 which is fully supported by Node 10).
 - dropped winston as dependency, instead a factory can be provided to the connection constructor which returns any logger.
+- the deprecated methods like `Exchange.publish`, `Exchange.startConsumer`, `Queue.publish` and `Queue.startConsumer` are removed from this library, since their replacements like `Exchange.send` and `Exchange.activateConsumer` already existed.
 
 ### Defining Features
 
@@ -55,7 +56,7 @@ var exchange = connection.declareExchange("ExchangeName");
 var queue = connection.declareQueue("QueueName");
 queue.bind(exchange);
 queue.activateConsumer((message) => {
-    console.log("Message received: " + message.getContent());
+  console.log("Message received: " + message.getContent());
 });
 
 // it is possible that the following message is not received because
@@ -64,10 +65,10 @@ var msg = new Message("Test");
 exchange.send(msg);
 
 connection.completeConfiguration().then(() => {
-    // the following message will be received because
-    // everything you defined earlier for this connection now exists
-    var msg2 = new Message("Test2");
-    exchange.send(msg2);
+  // the following message will be received because
+  // everything you defined earlier for this connection now exists
+  var msg2 = new Message("Test2");
+  exchange.send(msg2);
 });
 ```
 
