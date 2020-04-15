@@ -6,7 +6,7 @@ import { Message } from "../Message";
 import { Connection } from "../Connection/Connection";
 import * as AmqpLib from "amqplib/callback_api";
 import * as os from "os";
-import { ActivateConsumerOptions } from "../Queue/ActivateConsumerOptions";
+import { StartConsumerOptions } from "../Queue/StartConsumerOptions";
 import { SimpleLogger } from "../LoggerFactory";
 
 export class Exchange {
@@ -236,7 +236,7 @@ export class Exchange {
     return this._name + "." + ApplicationName + "." + os.hostname() + "." + process.pid;
   }
     
-  public activateConsumer(onMessage: (msg: Message) => any, options?: ActivateConsumerOptions): Promise<any> {
+  public activateConsumer(onMessage: (msg: Message) => any, options?: StartConsumerOptions): Promise<any> {
     const queueName = this.consumerQueueName();
     if (this.connection._queues[queueName]) {
       return new Promise<void>((_, reject) => {

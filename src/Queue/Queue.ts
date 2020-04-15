@@ -9,7 +9,6 @@ import { DeclarationOptions } from "./DeclarationOptions";
 import { StartConsumerOptions } from "./StartConsumerOptions";
 import { StartConsumerResult } from "./StartConsumerResult";
 import { DeleteResult } from "./DeleteResult";
-import { ActivateConsumerOptions } from "./ActivateConsumerOptions";
 import { SimpleLogger } from "../LoggerFactory";
 
 export class Queue {
@@ -188,7 +187,7 @@ export class Queue {
   }
   activateConsumer(
     onMessage: (msg: Message) => any,
-    options: ActivateConsumerOptions = {},
+    options: StartConsumerOptions = {},
   ): Promise<StartConsumerResult> {
     if (this._consumerInitialized !== undefined) {
       return new Promise<StartConsumerResult>((_, reject) => {
