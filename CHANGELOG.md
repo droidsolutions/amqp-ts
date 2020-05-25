@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/droidsolutions/amqp-ts/compare/v1.0.2...v1.0.3) (2020-05-25)
+
+
+### Bug Fixes
+
+* update amqlib to 0.5.6 ([e254676](https://github.com/droidsolutions/amqp-ts/commit/e254676df29b9c8ce7e369bf58ba8c356f99d4bc))
+
 ## [1.0.2](https://github.com/droidsolutions/amqp-ts/compare/v1.0.1...v1.0.2) (2020-04-15)
 
 
