@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/explicit-module-boundary-types */
 import { Exchange } from "../Exchange/Exchange";
 import { Connection } from "../Connection/Connection";
 import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
@@ -89,11 +93,11 @@ export class Queue {
     }
     return content;
   }
-  
+
   send(message: Message): void {
     message.sendTo(this);
   }
-  
+
   rpc(requestParameters: any): Promise<Message> {
     return new Promise<Message>((resolve, reject) => {
       const processRpc = (): void => {
@@ -107,7 +111,7 @@ export class Queue {
             resolve(result);
           },
           { noAck: true },
-          (err, ok) => {
+          (err: Error, ok) => {
             /* istanbul ignore if */
             if (err) {
               reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
@@ -144,19 +148,22 @@ export class Queue {
       });
     });
   }
-  
-  public activateConsumer(onMessage: (msg: Message) => any, options: StartConsumerOptions = {}): Promise<StartConsumerResult> {
+
+  public activateConsumer(
+    onMessage: (msg: Message) => any,
+    options: StartConsumerOptions = {},
+  ): Promise<StartConsumerResult> {
     if (this._consumerInitialized !== undefined) {
       return Promise.reject(new Error("amqp-ts Queue.activateConsumer error: consumer already defined"));
     }
-    
+
     this._consumerOptions = options;
     this._consumer = onMessage;
     this._initializeConsumer();
 
     return this._consumerInitialized;
   }
-  
+
   _initializeConsumer(): void {
     const processedMsgConsumer = (msg: AmqpLib.Message): void => {
       try {
@@ -188,7 +195,7 @@ export class Queue {
         this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
       }
     };
-    
+
     const rawMsgConsumer = (msg: AmqpLib.Message): void => {
       try {
         this._consumer(msg, this._channel);
@@ -197,7 +204,7 @@ export class Queue {
         this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
       }
     };
-    
+
     const activateConsumerWrapper = (msg: AmqpLib.Message): void => {
       try {
         const message = new Message(msg.content, msg.properties);
@@ -225,7 +232,7 @@ export class Queue {
         this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
       }
     };
-    
+
     this._consumerInitialized = new Promise<StartConsumerResult>((resolve, reject) => {
       this.initialized.then(() => {
         let consumerFunction = activateConsumerWrapper;

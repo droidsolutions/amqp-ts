@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable no-console */
 /* eslint-disable @typescript-eslint/no-var-requires */
 /**
@@ -6,7 +9,7 @@
  */
 import * as Chai from "chai";
 const expect = Chai.expect;
- 
+
 import { Connection } from "../src/Connection/Connection";
 import { Message } from "../src/Message";
 import * as pino from "pino";
@@ -48,17 +51,17 @@ function restartAmqpServer() {
       cp.exec("net start rabbitmq");
     } catch (err) {
       logger.error(
-        {err},
+        { err },
         "Unable to shutdown and restart RabbitMQ, possible solution: use elevated permissions (start an admin shell)",
       );
-      throw new Error("Unable to restart rabbitmq, error:\n" + err.message);
+      throw new Error(`Unable to restart rabbitmq, error:\\n${(err as Error).message}`);
     }
   } else {
     try {
       cp.execSync("./tools/restart-rabbit.sh");
     } catch (err) {
-      logger.error({err}, "Unable to shutdown and restart RabbitMQ");
-      throw new Error("Unable to restart rabbitmq, error:\n" + err.message);
+      logger.error({ err }, "Unable to shutdown and restart RabbitMQ");
+      throw new Error("Unable to restart rabbitmq, error:\n" + (err as Error).message);
     }
   }
 }
@@ -66,7 +69,7 @@ function restartAmqpServer() {
 /* istanbul ignore next */
 describe("AMQP Connection class automatic reconnection", function () {
   // cleanup function for the AMQP connection, also tests the Connection.deleteConfiguration method
-  function cleanup(connection, done, error?) {
+  function cleanup(connection: Connection, done, error?) {
     connection
       .deleteConfiguration()
       .then(() => {

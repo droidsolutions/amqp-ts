@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable no-console */
 /**
  * Tests for amqp-ts
@@ -32,12 +35,12 @@ describe("Test amqp-ts module", function () {
   let testExchangeNumber = 0;
   function nextExchangeName(): string {
     testExchangeNumber++;
-    return testExchangeNamePrefix + testExchangeNumber;
+    return testExchangeNamePrefix + testExchangeNumber.toString();
   }
   let testQueueNumber = 0;
   function nextQueueName(): string {
     testQueueNumber++;
-    return testQueueNamePrefix + testQueueNumber;
+    return testQueueNamePrefix + testQueueNumber.toString();
   }
 
   // keep track of the created connections for cleanup
@@ -49,7 +52,7 @@ describe("Test amqp-ts module", function () {
   }
 
   // cleanup function for the AMQP connection, also tests the Connection.deleteConfiguration method
-  function cleanup(connection, done, error?) {
+  function cleanup(connection: Connection, done: Mocha.Done, error?: Error) {
     connection
       .deleteConfiguration()
       .then(() => {
@@ -76,7 +79,7 @@ describe("Test amqp-ts module", function () {
         name: "amqp-ts unit-test",
         level: LogLevel,
         formatters: {
-          level: (label, _number) => {
+          level: (label, _number): Record<string, unknown> => {
             return { level: label };
           },
         },
@@ -243,10 +246,10 @@ describe("Test amqp-ts module", function () {
         callbackResolveNacked = resolve2;
       });
 
-      await queue.activateConsumer((message) => {
+      await queue.activateConsumer((message: Message) => {
         const content = message.getContent();
         if (nacked) {
-          // expect(content).to.equal("Test Finished", "Content of acked message inside message handler does not match");
+         // expect(content).to.equal("Test Finished", "Content of acked message inside message handler does not match");
           message.ack();
           callbackResolveAcked(content);
         } else {
@@ -690,7 +693,7 @@ describe("Test amqp-ts module", function () {
       const exchangeName = nextExchangeName();
       const queueName = nextQueueName();
 
-      let exchange = currentConnection.declareExchange(exchangeName);
+      const exchange = currentConnection.declareExchange(exchangeName);
       let queue = currentConnection.declareQueue(queueName);
       await queue.bind(exchange);
 
@@ -703,7 +706,7 @@ describe("Test amqp-ts module", function () {
       queue = currentConnection.declareQueue(queueName);
       await queue.initialized;
 
-      exchange = currentConnection.declareExchange(exchangeName);
+      currentConnection.declareExchange(exchangeName);
       const result = await queue.initialized;
 
       expect(result.messageCount).equals(1);
@@ -733,7 +736,7 @@ describe("Test amqp-ts module", function () {
       // test code
       const queue = currentConnection.declareQueue(nextQueueName());
 
-      await queue.activateConsumer((message) => {
+      await queue.activateConsumer((message: Message) => {
         return message.getContent().reply;
       });
 
@@ -748,7 +751,7 @@ describe("Test amqp-ts module", function () {
       // test code
       const queue = currentConnection.declareQueue(nextQueueName());
 
-      await queue.activateConsumer((message) => {
+      await queue.activateConsumer((message: Message) => {
         return new Message(message.getContent().reply);
       });
 
@@ -761,7 +764,7 @@ describe("Test amqp-ts module", function () {
       // test code
       const queue = currentConnection.declareQueue(nextQueueName());
 
-      await queue.activateConsumer((message) => {
+      await queue.activateConsumer((message: Message) => {
         return new Promise((resolve, _reject) => {
           setTimeout(() => {
             resolve(message.getContent().reply);
@@ -780,7 +783,7 @@ describe("Test amqp-ts module", function () {
       // test code
       const exchange = currentConnection.declareExchange(nextExchangeName());
 
-      await exchange.activateConsumer((message) => {
+      await exchange.activateConsumer((message: Message) => {
         return message.getContent().reply;
       });
 

@@ -28,7 +28,7 @@ export class Binding {
     }
     return Promise.all(promises);
   }
-  
+
   public initialized: Promise<Binding>;
   public _source: Exchange;
   public _destination: Exchange | Queue;
@@ -47,21 +47,29 @@ export class Binding {
       if (this._destination instanceof Queue) {
         const queue = this._destination;
         queue.initialized.then(() => {
-          queue._channel.bindQueue(this._destination.name, this._source.name, this.pattern, this.args, (err, _ok) => {
-            /* istanbul ignore if */
-            if (err) {
-              this.log.error(
-                { err },
-                "Failed to create queue binding (%s->%s)",
-                this._source.name,
-                this._destination.name,
-              );
-              delete this._destination.connection._bindings[Binding.id(this._destination, this._source, this.pattern)];
-              reject(err);
-            } else {
-              resolve(this);
-            }
-          });
+          queue._channel.bindQueue(
+            this._destination.name,
+            this._source.name,
+            this.pattern,
+            this.args,
+            (err: Error, _ok) => {
+              /* istanbul ignore if */
+              if (err) {
+                this.log.error(
+                  { err },
+                  "Failed to create queue binding (%s->%s)",
+                  this._source.name,
+                  this._destination.name,
+                );
+                delete this._destination.connection._bindings[
+                  Binding.id(this._destination, this._source, this.pattern)
+                ];
+                reject(err);
+              } else {
+                resolve(this);
+              }
+            },
+          );
         });
       } else {
         const exchange = this._destination;
@@ -71,7 +79,7 @@ export class Binding {
             this._source.name,
             this.pattern,
             this.args,
-            (err, _ok) => {
+            (err: Error, _ok) => {
               /* istanbul ignore if */
               if (err) {
                 this.log.error(

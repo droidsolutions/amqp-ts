@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-types */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { DeclarationOptions } from "./DeclarationOptions";
 import { InitializeResult } from "./InitializeResult";
 import { DIRECT_REPLY_TO_QUEUE, ApplicationName } from "../amqp-ts";
@@ -18,7 +20,7 @@ export class Exchange {
   public get type(): string {
     return this._type;
   }
-  
+
   private _consumer_handlers: Array<[string, any]> = new Array<[string, any]>();
   private _isConsumerInitializedRcp = false;
   private _name: string;
@@ -34,7 +36,7 @@ export class Exchange {
     this._type = type;
     this._initialize();
   }
-  
+
   public _initialize(): void {
     this.initialized = new Promise<InitializeResult>((resolve, reject) => {
       this.connection.initialized
@@ -74,11 +76,12 @@ export class Exchange {
     });
     this.connection._exchanges[this._name] = this;
   }
-  
+
   public send(message: Message, routingKey = ""): void {
     message.sendTo(this, routingKey);
   }
-  
+
+  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
   public rpc(requestParameters: any, routingKey = "", callback?: (err, message: Message) => void): Promise<Message> {
     return new Promise<Message>((resolve, reject) => {
       function generateUuid(): string {
@@ -102,7 +105,7 @@ export class Exchange {
               resolve(result);
             },
             { noAck: true },
-            (err, _ok) => {
+            (err: Error, _ok) => {
               /* istanbul ignore if */
               if (err) {
                 reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
@@ -134,7 +137,7 @@ export class Exchange {
       this.initialized.then(processRpc);
     });
   }
-  
+
   public delete(): Promise<void> {
     if (this._deleting === undefined) {
       this._deleting = new Promise<void>((resolve, reject) => {
@@ -202,15 +205,15 @@ export class Exchange {
     const binding = new Binding(this, source, pattern, args);
     return binding.initialized;
   }
-  
+
   public unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
     return this.connection._bindings[Binding.id(this, source, pattern)].delete();
   }
-  
+
   public consumerQueueName(): string {
-    return this._name + "." + ApplicationName + "." + os.hostname() + "." + process.pid;
+    return `${this._name}.${ApplicationName}.${os.hostname()}.${process.pid}`;
   }
-    
+
   public activateConsumer(onMessage: (msg: Message) => any, options?: StartConsumerOptions): Promise<any> {
     const queueName = this.consumerQueueName();
     if (this.connection._queues[queueName]) {
@@ -228,7 +231,7 @@ export class Exchange {
       return Promise.all(promises);
     }
   }
-  
+
   public stopConsumer(): Promise<any> {
     const queue = this.connection._queues[this.consumerQueueName()];
     if (queue) {

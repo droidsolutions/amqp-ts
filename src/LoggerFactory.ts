@@ -3,6 +3,7 @@
  * A function that retrieves an instance of a logger.
  */
 export interface LoggerFactory {
+  // eslint-disable-next-line @typescript-eslint/ban-types
   (context: Function | string, meta?: { [key: string]: any }): SimpleLogger;
 }
 
@@ -36,14 +37,14 @@ interface LogFunction {
    * Logs an object with it's properties and a message template where %d, %s and %o are replaced by the given args in
    * their order.
    */
-  (obj: object, msg?: string, ...args: any[]): void;
+  (obj: Record<string, unknown>, msg?: string, ...args: any[]): void;
 }
 
 export class EmtpyLogger implements SimpleLogger {
-  trace(_obj: object | string, _msg?: string, ..._args: any[]): void {}
-  debug(_obj: object | string, _msg?: string, ..._args: any[]): void {}
-  info(_obj: object | string, _msg?: string, ..._args: any[]): void {}
-  warn(_obj: object | string, _msg?: string, ..._args: any[]): void {}
-  error(_obj: object | string, _msg?: string, ..._args: any[]): void {}
-  fatal(_obj: object | string, _msg?: string, ..._args: any[]): void {}
+  trace(_obj: Record<string, unknown> | string, _msg?: string, ..._args: any[]): void {}
+  debug(_obj: Record<string, unknown> | string, _msg?: string, ..._args: any[]): void {}
+  info(_obj: Record<string, unknown> | string, _msg?: string, ..._args: any[]): void {}
+  warn(_obj: Record<string, unknown> | string, _msg?: string, ..._args: any[]): void {}
+  error(_obj: Record<string, unknown> | string, _msg?: string, ..._args: any[]): void {}
+  fatal(_obj: Record<string, unknown> | string, _msg?: string, ..._args: any[]): void {}
 }

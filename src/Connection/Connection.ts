@@ -52,6 +52,7 @@ export class Connection extends EventEmitter {
     this.log = this.loggerFactory(this.constructor, { module: "amqp-ts" });
 
     this.url = url;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     this.socketOptions = socketOptions;
     this.reconnectStrategy = reconnectStrategy;
     this._exchanges = {};
@@ -61,7 +62,7 @@ export class Connection extends EventEmitter {
   }
   
   public tryToConnect(thisConnection: Connection, retry: number, callback: (err: any) => void): void {
-    AmqpLib.connect(thisConnection.url, thisConnection.socketOptions, (err, connection) => {
+    AmqpLib.connect(thisConnection.url, thisConnection.socketOptions, (err: Error, connection) => {
       /* istanbul ignore if */
       if (err) {
         thisConnection.isConnected = false;
@@ -76,6 +77,7 @@ export class Connection extends EventEmitter {
           this.log.warn("Connection retry %d in %d ms", retry + 1, thisConnection.reconnectStrategy.interval);
           thisConnection.emit("trying_connect");
           setTimeout(
+            // eslint-disable-next-line @typescript-eslint/no-implied-eval
             thisConnection.tryToConnect.bind(this),
             thisConnection.reconnectStrategy.interval,
             thisConnection,
@@ -299,7 +301,7 @@ export class Connection extends EventEmitter {
       });
     });
     /* istanbul ignore next */
-    this.initialized.catch((err) => {
+    this.initialized.catch((err: Error) => {
       this.log.warn({ err }, "Error creating connection!");
       this.emit("error_connection", err);
       //throw (err);

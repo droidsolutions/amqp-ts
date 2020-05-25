@@ -6,5 +6,5 @@ export interface StartConsumerOptions {
   manualAck?: boolean;
   exclusive?: boolean;
   priority?: number;
-  arguments?: object;
+  arguments?: Record<string, unknown>;
 }
