@@ -50,7 +50,7 @@
     "chai-as-promised": "^7.1.1",
     "del": "^5.1.0",
     "eslint": "7.9.0",
-    "eslint-config-prettier": "6.11.0",
+    "eslint-config-prettier": "6.12.0",
     "eslint-plugin-mocha": "8.0.0",
     "husky": "^4.2.5",
     "line-reader": "^0.4.0",
