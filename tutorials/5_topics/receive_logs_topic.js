@@ -6,6 +6,7 @@ const args = process.argv.slice(2);
 const severity = args[0];
 if (!severity) {
   console.log("Usage: receive_logs_topic.js <facility>.<severity>");
+  // eslint-disable-next-line no-process-exit
   process.exit(1);
 }
 

@@ -79,9 +79,9 @@ export class Queue {
   }
   static _packMessageContent(content: any, options: any): Buffer {
     if (typeof content === "string") {
-      content = new Buffer(content);
+      content = Buffer.from(content);
     } else if (!(content instanceof Buffer)) {
-      content = new Buffer(JSON.stringify(content));
+      content = Buffer.from(JSON.stringify(content));
       options.contentType = "application/json";
     }
     return content;

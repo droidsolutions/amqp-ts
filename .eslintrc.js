@@ -14,8 +14,14 @@ module.exports = {
     "plugin:@typescript-eslint/recommended",
     "plugin:@typescript-eslint/recommended-requiring-type-checking",
     "prettier/@typescript-eslint",
+    "plugin:node/recommended-module",
   ],
   ignorePatterns: ["coverage", "lib", "test/__test", ".eslintrc.js"],
+  settings: {
+    node: {
+      tryExtensions: [".js", ".json", ".node", ".ts"],
+    },
+  },
   rules: {
     "comma-dangle": ["error", "always-multiline"],
     "dot-notation": ["error"],
@@ -59,6 +65,7 @@ module.exports = {
         "@typescript-eslint/no-unsafe-member-access": "off",
         "@typescript-eslint/no-unsafe-return": "off",
         "@typescript-eslint/restrict-plus-operands": "off",
+        "no-undef": "off"
       },
     },
     {
