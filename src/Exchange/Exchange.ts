@@ -94,7 +94,7 @@ export class Exchange {
           this._channel.consume(
             DIRECT_REPLY_TO_QUEUE,
             (resultMsg) => {
-              const result = new Message(resultMsg.content, resultMsg.fields);
+              const result = new Message(resultMsg.content, resultMsg.properties);
               result.fields = resultMsg.fields;
               for (const handler of this._consumer_handlers) {
                 if (handler[0] === resultMsg.properties.correlationId) {

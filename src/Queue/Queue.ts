@@ -106,7 +106,7 @@ export class Queue {
           DIRECT_REPLY_TO_QUEUE,
           (resultMsg) => {
             this._channel.cancel(consumerTag);
-            const result = new Message(resultMsg.content, resultMsg.fields);
+            const result = new Message(resultMsg.content, resultMsg.properties);
             result.fields = resultMsg.fields;
             resolve(result);
           },

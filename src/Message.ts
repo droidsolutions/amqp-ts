@@ -10,11 +10,11 @@ export class Message {
   /** for received messages only: the channel it has been received on */
   /** received messages only: original amqplib message */
   public _message: AmqpLib.Message;
-  public properties: any;
+  public properties: AmqpLib.Options.Publish;
   public content: Buffer;
 
   // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-  constructor(content?: any, options: any = {}) {
+  constructor(content?: any, options: AmqpLib.Options.Publish = {}) {
     this.properties = options;
     if (content !== undefined) {
       this.setContent(content);
@@ -84,9 +84,9 @@ export class Message {
 
   private setContent(content: any): void {
     if (typeof content === "string") {
-      this.content = new Buffer(content);
+      this.content = Buffer.from(content);
     } else if (!(content instanceof Buffer)) {
-      this.content = new Buffer(JSON.stringify(content));
+      this.content = Buffer.from(JSON.stringify(content));
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       this.properties.contentType = "application/json";
     } else {
