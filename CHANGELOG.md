@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/droidsolutions/amqp-ts/compare/v1.1.0...v1.1.1) (2020-09-28)
+
+
+### Bug Fixes
+
+* re-export Amqp property type ([2b8b887](https://github.com/droidsolutions/amqp-ts/commit/2b8b887e45b69dcc6da65ef15e944b919fe26022))
+
 # [1.1.0](https://github.com/droidsolutions/amqp-ts/compare/v1.0.3...v1.1.0) (2020-09-28)
 
 
