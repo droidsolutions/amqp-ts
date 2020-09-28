@@ -1,6 +1,6 @@
 import { Exchange } from "./Exchange/Exchange";
-import { Queue } from "./Queue/Queue";
 import { SimpleLogger } from "./LoggerFactory";
+import { Queue } from "./Queue/Queue";
 
 export class Binding {
   public static id(destination: Exchange | Queue, source: Exchange, pattern?: string): string {

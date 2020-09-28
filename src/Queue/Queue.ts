@@ -2,18 +2,18 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/explicit-module-boundary-types */
-import { Exchange } from "../Exchange/Exchange";
-import { Connection } from "../Connection/Connection";
+import * as AmqpLib from "amqplib/callback_api";
 import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
 import { Binding } from "../Binding";
+import { Connection } from "../Connection/Connection";
+import { Exchange } from "../Exchange/Exchange";
+import { SimpleLogger } from "../LoggerFactory";
 import { Message } from "../Message";
-import { InitializeResult } from "./InitializeResult";
-import * as AmqpLib from "amqplib/callback_api";
 import { DeclarationOptions } from "./DeclarationOptions";
+import { DeleteResult } from "./DeleteResult";
+import { InitializeResult } from "./InitializeResult";
 import { StartConsumerOptions } from "./StartConsumerOptions";
 import { StartConsumerResult } from "./StartConsumerResult";
-import { DeleteResult } from "./DeleteResult";
-import { SimpleLogger } from "../LoggerFactory";
 
 export class Queue {
   public initialized: Promise<InitializeResult>;

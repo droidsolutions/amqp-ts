@@ -8,11 +8,10 @@
  * Created by Ab on 2015-10-21.
  */
 import * as Chai from "chai";
-const expect = Chai.expect;
-
+import * as pino from "pino";
 import { Connection } from "../src/Connection/Connection";
 import { Message } from "../src/Message";
-import * as pino from "pino";
+const expect = Chai.expect;
 
 /**
  * Test using a local rabbitmq instance

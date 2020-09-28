@@ -9,11 +9,11 @@
 import * as AmqpLib from "amqplib";
 import * as Chai from "chai";
 import * as chaiAsPromised from "chai-as-promised";
+import * as pino from "pino";
 import { Connection } from "../src/Connection/Connection";
 import { Topology } from "../src/Connection/Topology";
-import { Message } from "../src/Message";
 import { LoggerFactory } from "../src/LoggerFactory";
-import * as pino from "pino";
+import { Message } from "../src/Message";
 
 /**
  * Until we get a good mock for amqplib we will test using a local rabbitmq instance
@@ -249,7 +249,7 @@ describe("Test amqp-ts module", function () {
       await queue.activateConsumer((message: Message) => {
         const content = message.getContent();
         if (nacked) {
-         // expect(content).to.equal("Test Finished", "Content of acked message inside message handler does not match");
+          // expect(content).to.equal("Test Finished", "Content of acked message inside message handler does not match");
           message.ack();
           callbackResolveAcked(content);
         } else {

@@ -1,13 +1,13 @@
+import * as AmqpLib from "amqplib/callback_api";
 import { EventEmitter } from "events";
-import { Topology } from "./Topology";
-import { ReconnectStrategy } from "./ReconnectStrategy";
+import { Binding } from "../Binding";
 import { DeclarationOptions as ExchangeDeclarationOptions } from "../Exchange/DeclarationOptions";
 import { Exchange } from "../Exchange/Exchange";
-import { Binding } from "../Binding";
-import { Queue } from "../Queue/Queue";
+import { EmtpyLogger, LoggerFactory, SimpleLogger } from "../LoggerFactory";
 import { DeclarationOptions as QueueDeclrationOptions } from "../Queue/DeclarationOptions";
-import * as AmqpLib from "amqplib/callback_api";
-import { SimpleLogger, LoggerFactory, EmtpyLogger } from "../LoggerFactory";
+import { Queue } from "../Queue/Queue";
+import { ReconnectStrategy } from "./ReconnectStrategy";
+import { Topology } from "./Topology";
 
 export class Connection extends EventEmitter {
   public initialized: Promise<void>;
@@ -60,7 +60,7 @@ export class Connection extends EventEmitter {
     this._bindings = {};
     this.rebuildConnection();
   }
-  
+
   public tryToConnect(thisConnection: Connection, retry: number, callback: (err: any) => void): void {
     AmqpLib.connect(thisConnection.url, thisConnection.socketOptions, (err: Error, connection) => {
       /* istanbul ignore if */
@@ -112,7 +112,7 @@ export class Connection extends EventEmitter {
       }
     });
   }
-  
+
   public _rebuildAll(err: Error): Promise<void> {
     this.log.warn({ err }, "Connection error: %s", err.message);
     this.log.debug("Rebuilding connection NOW.");
@@ -151,7 +151,7 @@ export class Connection extends EventEmitter {
       );
     });
   }
-  
+
   public close(): Promise<void> {
     this._isClosing = true;
     return new Promise<void>((resolve, reject) => {
@@ -169,7 +169,7 @@ export class Connection extends EventEmitter {
       });
     });
   }
-  
+
   /**
    * Make sure the whole defined connection topology is configured:
    * return promise that fulfills after all defined exchanges, queues and bindings are initialized
@@ -193,7 +193,7 @@ export class Connection extends EventEmitter {
     }
     return Promise.all(promises);
   }
-  
+
   /**
    * Delete the whole defined connection topology:
    * return promise that fulfills after all defined exchanges, queues and bindings have been removed
@@ -217,7 +217,7 @@ export class Connection extends EventEmitter {
     }
     return Promise.all(promises);
   }
-  
+
   public declareExchange(name: string, type?: string, options?: ExchangeDeclarationOptions): Exchange {
     let exchange = this._exchanges[name];
     if (exchange === undefined) {
@@ -225,7 +225,7 @@ export class Connection extends EventEmitter {
     }
     return exchange;
   }
-  
+
   public declareQueue(name: string, options?: QueueDeclrationOptions): Queue {
     let queue = this._queues[name];
     if (queue === undefined) {
@@ -233,7 +233,7 @@ export class Connection extends EventEmitter {
     }
     return queue;
   }
-  
+
   public declareTopology(topology: Topology): Promise<any> {
     const promises: Promise<any>[] = [];
     let i: number;
@@ -265,11 +265,11 @@ export class Connection extends EventEmitter {
     }
     return Promise.all(promises);
   }
-  
+
   public get getConnection(): AmqpLib.Connection {
     return this.connection;
   }
-  
+
   private rebuildConnection(): Promise<void> {
     if (this._rebuilding) {
       // only one rebuild process can be active at any time

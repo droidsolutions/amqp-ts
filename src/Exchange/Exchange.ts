@@ -1,15 +1,15 @@
 /* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { DeclarationOptions } from "./DeclarationOptions";
-import { InitializeResult } from "./InitializeResult";
-import { DIRECT_REPLY_TO_QUEUE, ApplicationName } from "../amqp-ts";
-import { Binding } from "../Binding";
-import { Message } from "../Message";
-import { Connection } from "../Connection/Connection";
 import * as AmqpLib from "amqplib/callback_api";
 import * as os from "os";
-import { StartConsumerOptions } from "../Queue/StartConsumerOptions";
+import { ApplicationName, DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
+import { Binding } from "../Binding";
+import { Connection } from "../Connection/Connection";
 import { SimpleLogger } from "../LoggerFactory";
+import { Message } from "../Message";
+import { StartConsumerOptions } from "../Queue/StartConsumerOptions";
+import { DeclarationOptions } from "./DeclarationOptions";
+import { InitializeResult } from "./InitializeResult";
 
 export class Exchange {
   public initialized: Promise<InitializeResult>;
