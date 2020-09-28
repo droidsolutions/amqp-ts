@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/droidsolutions/amqp-ts/compare/v1.2.0...v1.2.1) (2020-09-28)
+
+
+### Bug Fixes
+
+* implement AmqpProperties for librrary consumers and add documentation ([e28d535](https://github.com/droidsolutions/amqp-ts/commit/e28d53538a722a89b6c0e7d8884506d686ffe6c3))
+
 # [1.2.0](https://github.com/droidsolutions/amqp-ts/compare/v1.1.1...v1.2.0) (2020-09-28)
 
 
