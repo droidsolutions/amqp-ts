@@ -1,3 +1,11 @@
+# [1.1.0](https://github.com/droidsolutions/amqp-ts/compare/v1.0.3...v1.1.0) (2020-09-28)
+
+
+### Features
+
+* set type of Message properties ([b7c965c](https://github.com/droidsolutions/amqp-ts/commit/b7c965c64e24fe48ff34010f1089544a8d9e07dd))
+* **deps:** update amqplib to 0.6.0 ([8106b1c](https://github.com/droidsolutions/amqp-ts/commit/8106b1c0a2c8bd0dd2afaa3a34156d0c5dc224e7))
+
 ## [1.0.3](https://github.com/droidsolutions/amqp-ts/compare/v1.0.2...v1.0.3) (2020-05-25)
 
 
