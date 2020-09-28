@@ -737,7 +737,7 @@ describe("Test amqp-ts module", function () {
       const queue = currentConnection.declareQueue(nextQueueName());
 
       await queue.activateConsumer((message: Message) => {
-        return message.getContent().reply;
+        return (message.getContent() as Record<string, unknown>).reply;
       });
 
       await currentConnection.completeConfiguration();
@@ -752,7 +752,7 @@ describe("Test amqp-ts module", function () {
       const queue = currentConnection.declareQueue(nextQueueName());
 
       await queue.activateConsumer((message: Message) => {
-        return new Message(message.getContent().reply);
+        return new Message((message.getContent() as Record<string, unknown>).reply);
       });
 
       const result = await queue.rpc({ reply: "TestRpc" });
@@ -767,7 +767,7 @@ describe("Test amqp-ts module", function () {
       await queue.activateConsumer((message: Message) => {
         return new Promise((resolve, _reject) => {
           setTimeout(() => {
-            resolve(message.getContent().reply);
+            resolve((message.getContent() as Record<string, unknown>).reply);
           }, 10);
         });
       });
@@ -784,7 +784,7 @@ describe("Test amqp-ts module", function () {
       const exchange = currentConnection.declareExchange(nextExchangeName());
 
       await exchange.activateConsumer((message: Message) => {
-        return message.getContent().reply;
+        return (message.getContent() as Record<string, unknown>).reply;
       });
 
       await currentConnection.completeConfiguration();

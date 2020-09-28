@@ -27,8 +27,8 @@
     "lint": "eslint --ext ts,js .",
     "build": "tsc",
     "build:clean": "npm run clean && npm run build",
-    "test": "mocha test/amqp-ts.spec.ts",
-    "test:coverage": "nyc mocha test/amqp-ts.spec.ts",
+    "test": "mocha test/*.spec.ts",
+    "test:coverage": "nyc mocha test/*.spec.ts",
     "test-integration": "gulp test:integration"
   },
   "dependencies": {

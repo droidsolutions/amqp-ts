@@ -4,15 +4,29 @@ import { Exchange } from "./Exchange/Exchange";
 import { SimpleLogger } from "./LoggerFactory";
 import { Queue } from "./Queue/Queue";
 
+/**
+ * Represents a message that can be send via AMQP.
+ */
 export class Message {
   public fields: any;
-  public _channel: AmqpLib.Channel;
   /** for received messages only: the channel it has been received on */
+  public _channel: AmqpLib.Channel;
   /** received messages only: original amqplib message */
   public _message: AmqpLib.Message;
+  /** Additional AQMP properties of the message. */
   public properties: AmqpLib.Options.Publish;
+  /** The original contant of the message. */
   public content: Buffer;
 
+  /**
+   * Initializes a new instance of the @see Message class.
+   * 
+   * If the given content is not a buffer or a string it will be converted to a json string and the content type will be
+   * set.
+   * 
+   * @param content The message content.
+   * @param options The message options.
+   */
   // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
   constructor(content?: any, options: AmqpLib.Options.Publish = {}) {
     this.properties = options;
@@ -21,15 +35,38 @@ export class Message {
     }
   }
 
-  public getContent(): any {
+  /**
+   * Returns the content of the message. If properties.contentType is set to "application/json" the content will be
+   * parsed. If not it will return the string that represents the buffer.
+   */
+  public getContent(): string | Record<string, unknown> {
     let content = this.content.toString();
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (this.properties.contentType === "application/json") {
       content = JSON.parse(content);
     }
     return content;
   }
+  
+  /**
+   * Returns the content of the message parsed from json.
+   * 
+   * @throws {Error} If the content type in the message properties is not set to application/json.
+   */
+  public getJsonContent<T>(): T {
+    if (this.properties.contentType !== "application/json") {
+      throw new Error("The content of the message is not set as application/json.")
+    }
+    
+    return JSON.parse(this.content.toString((this.properties.contentEncoding as BufferEncoding) ?? "utf-8")) as T;
+  }
 
+  /**
+   * Tries to publish the message on the destination channel. Appends the current @see propeties object and the
+   * @see content of the message.
+   * 
+   * @param destination The destination of the message.
+   * @param routingKey An optional routing key.
+   */
   public sendTo(destination: Exchange | Queue, routingKey = ""): void {
     let exchange: string;
     // inline function to send the message
@@ -87,8 +124,8 @@ export class Message {
       this.content = Buffer.from(content);
     } else if (!(content instanceof Buffer)) {
       this.content = Buffer.from(JSON.stringify(content));
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       this.properties.contentType = "application/json";
+      this.properties.contentEncoding = "utf-8";
     } else {
       this.content = content;
     }
