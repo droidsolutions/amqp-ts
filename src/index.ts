@@ -8,8 +8,10 @@ import { DeclarationOptions as QueueDeclarationOptions } from "./Queue/Declarati
 import { Queue } from "./Queue/Queue";
 import { StartConsumerOptions } from "./Queue/StartConsumerOptions";
 import { LoggerFactory } from "./LoggerFactory";
+import { AmqpProperties } from "./AmqpProperties";
 
 export {
+  AmqpProperties,
   Binding,
   Connection,
   Exchange,
