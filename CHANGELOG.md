@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/droidsolutions/amqp-ts/compare/v1.1.1...v1.2.0) (2020-09-28)
+
+
+### Features
+
+* add generic getJsonContent method to Message ([931d40e](https://github.com/droidsolutions/amqp-ts/commit/931d40eac304e67d9c0bd649495cec301e393563))
+
 ## [1.1.1](https://github.com/droidsolutions/amqp-ts/compare/v1.1.0...v1.1.1) (2020-09-28)
 
 
