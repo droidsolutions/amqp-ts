@@ -77,7 +77,7 @@ export class Queue {
         });
     });
   }
-  static _packMessageContent(content: any, options: any): Buffer {
+  static _packMessageContent(content: Buffer | string | Record<string, unknown>, options: any): Buffer {
     if (typeof content === "string") {
       content = Buffer.from(content);
     } else if (!(content instanceof Buffer)) {
@@ -86,6 +86,7 @@ export class Queue {
     }
     return content;
   }
+
   static _unpackMessageContent(msg: AmqpLib.Message): any {
     let content = msg.content.toString();
     if (msg.properties.contentType === "application/json") {
@@ -218,9 +219,11 @@ export class Queue {
             // check if there is a reply-to
             if (msg.properties.replyTo) {
               if (!(resultValue instanceof Message)) {
-                resultValue = new Message(resultValue, {});
+                resultValue = new Message(resultValue ?? "", {});
               }
               resultValue.properties.correlationId = msg.properties.correlationId;
+              resultValue.properties.appId = msg.properties.appId;
+
               this._channel.sendToQueue(msg.properties.replyTo, resultValue.content, resultValue.properties);
             }
           })
