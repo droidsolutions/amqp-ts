@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/droidsolutions/amqp-ts/compare/v1.3.0...v1.3.1) (2020-10-15)
+
+
+### Bug Fixes
+
+* suppress "content is not a buffer" ([284b492](https://github.com/droidsolutions/amqp-ts/commit/284b492ad4b3cd3491d809fcc01813ef50f224d2))
+
 # [1.3.0](https://github.com/droidsolutions/amqp-ts/compare/v1.2.1...v1.3.0) (2020-09-28)
 
 
