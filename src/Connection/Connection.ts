@@ -289,7 +289,7 @@ export class Connection extends EventEmitter {
         } else {
           this._rebuilding = false;
           if (this.connectedBefore) {
-            this.log.warn("Connection re-established");
+            this.log.info("Connection re-established");
             this.emit("re_established_connection");
           } else {
             this.log.info("Connection established.");
