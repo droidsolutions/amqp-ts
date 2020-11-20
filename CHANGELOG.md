@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/droidsolutions/amqp-ts/compare/v1.3.1...v1.3.2) (2020-11-20)
+
+
+### Bug Fixes
+
+* export ReconnectStrategy ([c9baa02](https://github.com/droidsolutions/amqp-ts/commit/c9baa0213c3b3068fbcb925f932c682bf46bb41a))
+
 ## [1.3.1](https://github.com/droidsolutions/amqp-ts/compare/v1.3.0...v1.3.1) (2020-10-15)
 
 
