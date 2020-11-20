@@ -1,6 +1,7 @@
 import { AmqpProperties } from "./AmqpProperties";
 import { Binding } from "./Binding";
 import { Connection } from "./Connection/Connection";
+import { ReconnectStrategy } from "./Connection/ReconnectStrategy";
 import { Topology } from "./Connection/Topology";
 import { DeclarationOptions as ExchangeDeclarationOptions } from "./Exchange/DeclarationOptions";
 import { Exchange } from "./Exchange/Exchange";
@@ -20,6 +21,7 @@ export {
   Message,
   Queue,
   QueueDeclarationOptions,
+  ReconnectStrategy,
   StartConsumerOptions,
   Topology,
 };
