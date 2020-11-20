@@ -451,7 +451,7 @@ describe("Test amqp-ts module", function () {
 
       await currentConnection.completeConfiguration();
 
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         currentConnection.connection.close((err) => {
           if (err) {
             reject(err);
@@ -482,7 +482,7 @@ describe("Test amqp-ts module", function () {
 
       await currentConnection.completeConfiguration();
 
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         // break connection
         currentConnection.connection.close((err) => {
           if (err) {
