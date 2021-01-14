@@ -249,7 +249,7 @@ describe("Test amqp-ts module", function () {
       await queue.activateConsumer((message: Message) => {
         const content = message.getContent();
         if (nacked) {
-          // expect(content).to.equal("Test Finished", "Content of acked message inside message handler does not match");
+         // expect(content).to.equal("Test Finished", "Content of acked message inside message handler does not match");
           message.ack();
           callbackResolveAcked(content);
         } else {
@@ -882,7 +882,7 @@ describe("Test amqp-ts module", function () {
       const queue = currentConnection.declareQueue(queueName);
 
       await currentConnection.completeConfiguration();
-      // todo: create a ral test that checks if the function works
+      // todo: create a real test that checks if the function works
       queue.prefetch(3);
     });
 
