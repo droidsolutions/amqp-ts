@@ -19,7 +19,7 @@ Amqp-ts is a library for nodejs that simplifies communication with AMQP message 
 Changes to the [original amqp-ts](https://github.com/abreits/amqp-ts) package:
 
 - using up-to-date [amqplib](http://www.squaremobius.net/amqp.node/) (unfortunately the original package uses a four year old version that only support outdated NodeJS version)
-- dropped support for outdated NodeJS versions (Compile target in tsconfig is ES2018 which is fully supported by Node 10).
+- dropped support for outdated NodeJS versions (Compile target in tsconfig is ES2019 which is fully supported by Node 12).
 - dropped winston as dependency, instead a factory can be provided to the connection constructor which returns any logger.
 - the deprecated methods like `Exchange.publish`, `Exchange.startConsumer`, `Queue.publish` and `Queue.startConsumer` are removed from this library, since their replacements like `Exchange.send` and `Exchange.activateConsumer` already existed.
 
