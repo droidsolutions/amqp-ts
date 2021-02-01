@@ -203,11 +203,21 @@ export class Queue {
             }
           })
           .catch((err) => {
-            this.log.error({ err }, "Queue.onMessage RPC promise returned error: %s", err.message);
+            this.log.error(
+              { err, correlationId: msg.properties.correlationId, consumerTag: msg.fields.consumerTag },
+              "Replying on message %s throw an error: %s",
+              msg.properties.correlationId,
+              err.message,
+            );
           });
       } catch (err) {
         /* istanbul ignore next */
-        this.log.error({ err }, "Queue.onMessage consumer function returned error: %s", err.message);
+        this.log.error(
+          { err, correlationId: msg.properties.correlationId, consumerTag: msg.fields.consumerTag },
+          "Consuming the message %s returned error: %s",
+          msg.properties.correlationId,
+          err.message,
+        );
       }
     };
 
