@@ -1,3 +1,21 @@
+# [2.0.0](https://github.com/droidsolutions/amqp-ts/compare/v1.3.2...v2.0.0) (2021-02-01)
+
+
+### Code Refactoring
+
+* replac eunused options interface with amqplib interface ([679359c](https://github.com/droidsolutions/amqp-ts/commit/679359c2579d24b00ce3a74773353efe63632f09))
+
+
+### BREAKING CHANGES
+
+* removes StartConsumerOptions export.
+* Queue.activateConsumer and Exchange.activateConsumer now takes the
+AmqpLib.Options.Consume interface
+instead of the StartConsumerOptions. The interfaces look the same so no special actions should be
+needed.
+
+Also adds JSDOC comments on public queue methods and properties.
+
 ## [1.3.2](https://github.com/droidsolutions/amqp-ts/compare/v1.3.1...v1.3.2) (2020-11-20)
 
 
