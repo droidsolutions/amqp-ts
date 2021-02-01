@@ -7,7 +7,6 @@ import { Binding } from "../Binding";
 import { Connection } from "../Connection/Connection";
 import { SimpleLogger } from "../LoggerFactory";
 import { Message } from "../Message";
-import { StartConsumerOptions } from "../Queue/StartConsumerOptions";
 import { DeclarationOptions } from "./DeclarationOptions";
 import { InitializeResult } from "./InitializeResult";
 
@@ -214,7 +213,7 @@ export class Exchange {
     return `${this._name}.${ApplicationName}.${os.hostname()}.${process.pid}`;
   }
 
-  public activateConsumer(onMessage: (msg: Message) => any, options?: StartConsumerOptions): Promise<any> {
+  public activateConsumer(onMessage: (msg: Message) => any, options?: AmqpLib.Options.Consume): Promise<any> {
     const queueName = this.consumerQueueName();
     if (this.connection._queues[queueName]) {
       return new Promise<void>((_, reject) => {

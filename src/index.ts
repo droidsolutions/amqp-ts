@@ -9,7 +9,6 @@ import { LoggerFactory } from "./LoggerFactory";
 import { Message } from "./Message";
 import { DeclarationOptions as QueueDeclarationOptions } from "./Queue/DeclarationOptions";
 import { Queue } from "./Queue/Queue";
-import { StartConsumerOptions } from "./Queue/StartConsumerOptions";
 
 export {
   AmqpProperties,
@@ -22,6 +21,5 @@ export {
   Queue,
   QueueDeclarationOptions,
   ReconnectStrategy,
-  StartConsumerOptions,
   Topology,
 };
