@@ -110,7 +110,7 @@
       ".ts"
     ],
     "include": [
-      "src/*.ts"
+      "src/**/*.ts"
     ],
     "exclude": [
       ".nyc_output/*",
