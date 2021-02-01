@@ -61,7 +61,7 @@ export class Message {
   }
 
   /**
-   * Tries to publish the message on the destination channel. Appends the current @see propeties object and the
+   * Tries to publish the message on the destination channel. Appends the current @see properties object and the
    * @see content of the message.
    * 
    * @param destination The destination of the message.

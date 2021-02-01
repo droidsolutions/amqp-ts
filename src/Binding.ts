@@ -102,6 +102,9 @@ export class Binding {
     });
   }
 
+  /**
+   * Deletes this binding of either a queue or an exchange.
+   */
   public delete(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (this._destination instanceof Queue) {
