@@ -42,7 +42,7 @@
     "@types/amqplib": "^0.5.13",
     "@types/chai-as-promised": "^7.1.2",
     "@types/mocha": "8.2.0",
-    "@types/node": "14.14.22",
+    "@types/node": "14.14.24",
     "@types/pino": "^6.0.1",
     "@typescript-eslint/eslint-plugin": "4.14.1",
     "@typescript-eslint/parser": "4.14.1",
