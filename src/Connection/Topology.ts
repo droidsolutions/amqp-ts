@@ -1,7 +1,9 @@
+import { ExchangeType } from "../Exchange/ExchangeType";
+
 export interface Topology {
   exchanges: {
     name: string;
-    type?: string;
+    type?: ExchangeType;
     options?: any;
   }[];
   queues: {

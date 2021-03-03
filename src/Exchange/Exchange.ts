@@ -8,6 +8,7 @@ import { Connection } from "../Connection/Connection";
 import { SimpleLogger } from "../LoggerFactory";
 import { Message } from "../Message";
 import { DeclarationOptions } from "./DeclarationOptions";
+import { ExchangeType } from "./ExchangeType";
 import { InitializeResult } from "./InitializeResult";
 
 /**
@@ -30,7 +31,7 @@ export class Exchange {
   private _consumer_handlers: Array<[string, any]> = new Array<[string, any]>();
   private _isConsumerInitializedRcp = false;
   private _name: string;
-  private _type: string;
+  private _type: ExchangeType;
   private _deleting: Promise<void>;
   private _closing: Promise<void>;
   private log: SimpleLogger;
@@ -45,7 +46,7 @@ export class Exchange {
    * @param type The type of the exchange.
    * @param options Any declaration otions.
    */
-  constructor(public connection: Connection, name: string, type?: string, private options: DeclarationOptions = {}) {
+  constructor(public connection: Connection, name: string, type?: ExchangeType, private options: DeclarationOptions = {}) {
     this.log = this.connection.loggerFactory(this.constructor, { exchange: name });
 
     this._name = name;

@@ -3,6 +3,7 @@ import { EventEmitter } from "events";
 import { Binding } from "../Binding";
 import { DeclarationOptions as ExchangeDeclarationOptions } from "../Exchange/DeclarationOptions";
 import { Exchange } from "../Exchange/Exchange";
+import { ExchangeType } from "../Exchange/ExchangeType";
 import { EmtpyLogger, LoggerFactory, SimpleLogger } from "../LoggerFactory";
 import { DeclarationOptions as QueueDeclrationOptions } from "../Queue/DeclarationOptions";
 import { Queue } from "../Queue/Queue";
@@ -218,7 +219,13 @@ export class Connection extends EventEmitter {
     return Promise.all(promises);
   }
 
-  public declareExchange(name: string, type?: string, options?: ExchangeDeclarationOptions): Exchange {
+  /**
+   * 
+   * @param name The name of the exchange.
+   * @param type The type
+   * @param options 
+   */
+  public declareExchange(name: string, type?: ExchangeType, options?: ExchangeDeclarationOptions): Exchange {
     let exchange = this._exchanges[name];
     if (exchange === undefined) {
       exchange = new Exchange(this, name, type, options);

@@ -918,7 +918,7 @@ describe("Test amqp-ts module", function () {
     it("should not connect to a nonexisiting exchange with 'noCreate: true'", async function () {
       // test code
       const exchangeName = nextExchangeName();
-      currentConnection.declareExchange(exchangeName, "", { noCreate: true });
+      currentConnection.declareExchange(exchangeName, undefined, { noCreate: true });
 
       await expect(currentConnection.completeConfiguration()).to.be.rejectedWith("NOT-FOUND");
     });
@@ -930,7 +930,7 @@ describe("Test amqp-ts module", function () {
       const ch = await con.createChannel();
       await ch.assertExchange(exchangeName, "fanout");
 
-      const exchange = currentConnection.declareExchange(exchangeName, "", { noCreate: true });
+      const exchange = currentConnection.declareExchange(exchangeName, undefined, { noCreate: true });
       await exchange.initialized;
       await con.close();
     });
