@@ -22,6 +22,7 @@ Changes to the [original amqp-ts](https://github.com/abreits/amqp-ts) package:
 - dropped support for outdated NodeJS versions (Compile target in tsconfig is ES2019 which is fully supported by Node 12).
 - dropped winston as dependency, instead a factory can be provided to the connection constructor which returns any logger.
 - the deprecated methods like `Exchange.publish`, `Exchange.startConsumer`, `Queue.publish` and `Queue.startConsumer` are removed from this library, since their replacements like `Exchange.send` and `Exchange.activateConsumer` already existed.
+- fixes for https://github.com/abreits/amqp-ts/pull/46 and https://github.com/abreits/amqp-ts/issues/20 have been implemented
 
 ### Defining Features
 
