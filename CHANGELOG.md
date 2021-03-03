@@ -1,3 +1,15 @@
+# [2.1.0](https://github.com/droidsolutions/amqp-ts/compare/v2.0.0...v2.1.0) (2021-03-03)
+
+
+### Bug Fixes
+
+* check process.argv length before determining app name ([f7d0a18](https://github.com/droidsolutions/amqp-ts/commit/f7d0a18193e631bd3f4dfc4eb1ada889a36d8bd2)), closes [abreits/amqp-ts/#62](https://github.com/abreits/amqp-ts//issues/62)
+
+
+### Features
+
+* add ExchangeType to prevent wrong exchange type ([e80a01e](https://github.com/droidsolutions/amqp-ts/commit/e80a01e98e7b773503f24009beda3ecb1291e3ce))
+
 # [2.0.0](https://github.com/droidsolutions/amqp-ts/compare/v1.3.2...v2.0.0) (2021-02-01)
 
 
