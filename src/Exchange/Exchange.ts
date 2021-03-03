@@ -38,15 +38,20 @@ export class Exchange {
 
   /**
    * Initializes a new instance of the @see Exchange class.
-   * 
-   * @summary Initializes an exchange by creating a channel and asserting the exchange exists on it. Once done the 
+   *
+   * @summary Initializes an exchange by creating a channel and asserting the exchange exists on it. Once done the
    * {@link initialized} promise will resolve.
    * @param connection The AMQP connection.
    * @param name The name of the exchange.
    * @param type The type of the exchange.
    * @param options Any declaration otions.
    */
-  constructor(public connection: Connection, name: string, type?: ExchangeType, private options: DeclarationOptions = {}) {
+  constructor(
+    public connection: Connection,
+    name: string,
+    type?: ExchangeType,
+    private options: DeclarationOptions = {},
+  ) {
     this.log = this.connection.loggerFactory(this.constructor, { exchange: name });
 
     this._name = name;
@@ -99,7 +104,7 @@ export class Exchange {
 
   /**
    * Directly sends a message to this exchange.
-   * 
+   *
    * @param message The message.
    * @param routingKey The routing key of the message.
    */
@@ -202,7 +207,7 @@ export class Exchange {
     }
     return this._deleting;
   }
-  
+
   /**
    * Removes any bindings of this exchange and closes the channel.
    */
