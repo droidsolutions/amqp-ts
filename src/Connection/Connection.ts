@@ -172,8 +172,10 @@ export class Connection extends EventEmitter {
   }
 
   /**
-   * Make sure the whole defined connection topology is configured:
-   * return promise that fulfills after all defined exchanges, queues and bindings are initialized
+   * Make sure the whole defined connection topology is configured. Goes through each exchange, queue and binding and
+   * waits until all of them are initialized.
+   *
+   * @return A promise that fulfills after all defined exchanges, queues and bindings are initialized.
    */
   public completeConfiguration(): Promise<any> {
     const promises: Promise<any>[] = [];
@@ -220,10 +222,11 @@ export class Connection extends EventEmitter {
   }
 
   /**
+   * Declares a new exchange. Depdendent on the options it auto creates the exchange if it doesn ot already exists.
    * 
    * @param name The name of the exchange.
    * @param type The type
-   * @param options 
+   * @param options Options that are passed to assertExchange in amqp-lib.
    */
   public declareExchange(name: string, type?: ExchangeType, options?: ExchangeDeclarationOptions): Exchange {
     let exchange = this._exchanges[name];

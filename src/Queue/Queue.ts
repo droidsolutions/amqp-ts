@@ -132,12 +132,21 @@ export class Queue {
       this.initialized.then(processRpc);
     });
   }
+
+  /**
+   * Sets the prefetch of the current quere. This limits the amount of unacknowledged messages on a channel. If you
+   * already specified this in the options in the constructor you don't need to set it here again.
+   *
+   * For more information see {@link https://www.rabbitmq.com/consumer-prefetch.html}.
+   * @param count The maximum number of unacknowledged messages send to each listener of this queue.
+   */
   prefetch(count: number): void {
     this.initialized.then(() => {
       this._channel.prefetch(count);
       this.options.prefetch = count;
     });
   }
+
   recover(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.initialized.then(() => {
