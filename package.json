@@ -27,6 +27,7 @@
     "lint": "eslint --ext ts,js .",
     "build": "tsc",
     "build:clean": "npm run clean && npm run build",
+    "prepare": "husky install",
     "test": "mocha test/*.spec.ts",
     "test:coverage": "nyc mocha test/*.spec.ts",
     "test-integration": "gulp test:integration"
@@ -80,11 +81,6 @@
     "extends": [
       "@commitlint/config-conventional"
     ]
-  },
-  "husky": {
-    "hooks": {
-      "commit-msg": "commitlint -e $HUSKY_GIT_PARAMS"
-    }
   },
   "release": {
     "plugins": [
