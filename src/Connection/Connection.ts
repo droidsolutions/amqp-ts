@@ -222,11 +222,12 @@ export class Connection extends EventEmitter {
   }
 
   /**
-   * Declares a new exchange. Depdendent on the options it auto creates the exchange if it doesn ot already exists.
-   * 
+   * Declares a new exchange. Dependent on the options it auto creates the exchange if it doesn ot already exists.
+   *
    * @param name The name of the exchange.
    * @param type The type
    * @param options Options that are passed to assertExchange in amqp-lib.
+   * @returns The declared queue. You need to await the initialization of the queue.
    */
   public declareExchange(name: string, type?: ExchangeType, options?: ExchangeDeclarationOptions): Exchange {
     let exchange = this._exchanges[name];
@@ -236,11 +237,51 @@ export class Connection extends EventEmitter {
     return exchange;
   }
 
+  /**
+   * Declares an exchange and waits until it is initialized.
+   *
+   * @param name The name of the exchange.
+   * @param type The exchange type.
+   * @param options Any declaration options.
+   * @returns A promise that resolves when the exchange is declared and initialized.
+   */
+  public async declareExchangeAsync(
+    name: string,
+    type?: ExchangeType,
+    options?: ExchangeDeclarationOptions,
+  ): Promise<Exchange> {
+    const exchange = this.declareExchange(name, type, options);
+    await exchange.initialized;
+
+    return exchange;
+  }
+
+  /**
+   * Declares a new queue.
+   *
+   * @param name The name of the queue.
+   * @param options Any options for the queue declaration.
+   * @returns The queue.
+   */
   public declareQueue(name: string, options?: QueueDeclrationOptions): Queue {
     let queue = this._queues[name];
     if (queue === undefined) {
       queue = new Queue(this, name, options);
     }
+    return queue;
+  }
+
+  /**
+   * Declares a new queue and waits until it is intitialized.
+   *
+   * @param name The name of the queue.
+   * @param options Any options for the queue declaration.
+   * @returns A promise that resolves when the queue is declared and initialized.
+   */
+  public async declareQueueAsync(name: string, options?: QueueDeclrationOptions): Promise<Queue> {
+    const queue = this.declareQueue(name, options);
+    await queue.initialized;
+
     return queue;
   }
 

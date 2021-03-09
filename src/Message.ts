@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import * as AmqpLib from "amqplib/callback_api";
+import { AmqpProperties } from "./AmqpProperties";
 import { Exchange } from "./Exchange/Exchange";
 import { SimpleLogger } from "./LoggerFactory";
 import { Queue } from "./Queue/Queue";
@@ -14,21 +15,21 @@ export class Message {
   /** received messages only: original amqplib message */
   public _message: AmqpLib.Message;
   /** Additional AQMP properties of the message. */
-  public properties: AmqpLib.Options.Publish;
+  public properties: AmqpProperties;
   /** The original contant of the message. */
   public content: Buffer;
 
   /**
    * Initializes a new instance of the @see Message class.
-   * 
+   *
    * If the given content is not a buffer or a string it will be converted to a json string and the content type will be
    * set.
-   * 
+   *
    * @param content The message content.
    * @param options The message options.
    */
   // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-  constructor(content?: any, options: AmqpLib.Options.Publish = {}) {
+  constructor(content?: any, options: AmqpProperties = {}) {
     this.properties = options;
     if (content !== undefined) {
       this.setContent(content);
@@ -46,24 +47,24 @@ export class Message {
     }
     return content;
   }
-  
+
   /**
    * Returns the content of the message parsed from json.
-   * 
+   *
    * @throws {Error} If the content type in the message properties is not set to application/json.
    */
   public getJsonContent<T>(): T {
     if (this.properties.contentType !== "application/json") {
-      throw new Error("The content of the message is not set as application/json.")
+      throw new Error("The content of the message is not set as application/json.");
     }
-    
+
     return JSON.parse(this.content.toString((this.properties.contentEncoding as BufferEncoding) ?? "utf-8")) as T;
   }
 
   /**
    * Tries to publish the message on the destination channel. Appends the current @see properties object and the
    * @see content of the message.
-   * 
+   *
    * @param destination The destination of the message.
    * @param routingKey An optional routing key.
    */

@@ -147,7 +147,7 @@ The above example would result in log messages like these:
 
 Note: for errors to appear in the log, you must use a serializer for Pino like the given `pino.stdSerializers.err` used above.
 
-The advantage of this approach is, you'll see exactly who throws the error as well as additional context, like which exchange could not be declared. Of couse you can also use another logger like winston:
+The advantage of this approach is, you'll see exactly who throws the error as well as additional context, like which exchange could not be declared. Of couse you can also use another logger like `winston`:
 
 ```ts
 const logger = new winston.Logger({
