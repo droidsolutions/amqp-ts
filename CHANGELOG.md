@@ -1,3 +1,10 @@
+# [2.2.0](https://github.com/droidsolutions/amqp-ts/compare/v2.1.0...v2.2.0) (2021-03-09)
+
+
+### Features
+
+* add declareQueueAsync and declareExchangeAsync ([0e52d9a](https://github.com/droidsolutions/amqp-ts/commit/0e52d9a071aafae540abc00a78b46bf51bcc9ce8))
+
 # [2.1.0](https://github.com/droidsolutions/amqp-ts/compare/v2.0.0...v2.1.0) (2021-03-03)
 
 
