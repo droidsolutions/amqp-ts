@@ -1,6 +1,6 @@
 # DroidSolutions amqp-ts (AMQP TypeScript)
 
-![Main](https://github.com/droidsolutions/amqp-ts/workflows/Main/badge.svg)
+[![Main](https://github.com/droidsolutions/amqp-ts/actions/workflows/main.yml/badge.svg)](https://github.com/droidsolutions/amqp-ts/actions/workflows/main.yml)
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
 [![npm (scoped)](https://img.shields.io/npm/v/@droidsolutions-oss/amqp-ts)](https://www.npmjs.com/package/@droidsolutions-oss/amqp-ts)
 
