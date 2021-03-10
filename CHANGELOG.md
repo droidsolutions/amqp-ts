@@ -1,3 +1,10 @@
+## [2.2.1](https://github.com/droidsolutions/amqp-ts/compare/v2.2.0...v2.2.1) (2021-03-10)
+
+
+### Bug Fixes
+
+* don't send auto reply when consumer handler does not return a value ([aa0a6e1](https://github.com/droidsolutions/amqp-ts/commit/aa0a6e1b7d2ba701f43fe6c29415f62e94aebad4))
+
 # [2.2.0](https://github.com/droidsolutions/amqp-ts/compare/v2.1.0...v2.2.0) (2021-03-09)
 
 
