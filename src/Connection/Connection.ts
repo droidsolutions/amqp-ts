@@ -324,7 +324,7 @@ export class Connection extends EventEmitter {
   private rebuildConnection(): Promise<void> {
     if (this._rebuilding) {
       // only one rebuild process can be active at any time
-      this.log.debug("Connection rebuild already in progress, joining active rebuild attempt.");
+      this.log.debug("AMQP Connection rebuild already in progress, joining active rebuild attempt.");
       return this.initialized;
     }
     this._retry = -1;
@@ -340,10 +340,10 @@ export class Connection extends EventEmitter {
         } else {
           this._rebuilding = false;
           if (this.connectedBefore) {
-            this.log.info("Connection re-established");
+            this.log.info("AMQP Connection re-established");
             this.emit("re_established_connection");
           } else {
-            this.log.info("Connection established.");
+            this.log.info("AQMP Connection established.");
             this.emit("open_connection");
             this.connectedBefore = true;
           }
