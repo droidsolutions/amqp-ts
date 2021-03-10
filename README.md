@@ -9,6 +9,7 @@ This is a fork of [amqp-ts](https://github.com/abreits/amqp-ts).
 ## Table of Contents
 
 - [Overview](#overview)
+- [Usage](#usage)
 
 ## Overview <a name="overview"></a>
 
@@ -44,10 +45,34 @@ It does depend on the following npm libraries:
 No need to nest functionality, just create a connection, declare your exchanges, queues and
 bindings and send and receive messages. The library takes care of any direct dependencies.
 
-If you define an exchange and a queue and bind the queue to the exchange and want to make
-sure that the queue is connected to the exchange before you send a message to the exchange you can call the `connection.completeConfiguration()` method and act on the promise it returns.
+If you define an exchange and a queue and bind the queue to the exchange and want to make sure that the queue is connected to the exchange before you send a message to the exchange you can call the `connection.completeConfiguration()` method and act on the promise it returns.
 
-##### Typescript Example
+## Usage <a name="usage"></a>
+
+There are multiple ways to declare your exchanges, queues and bindings. Each of those has an `initialized` property which is a promise that resolves when initialization is complete. You can either await it yourself or call `completeConfiguration` on the connection like explained in [Lazy initialization](#initialization).
+
+### Async Typescript Example
+
+```ts
+import { Connection, Message } from "amqp-ts";
+
+var connection = new Connection("amqp://localhost");
+
+// publish
+var exchange = await connection.declareExchangeAsync("ExchangeName");
+
+var msg = new Message("Test");
+exchange.send(msg);
+
+// subscribe/consume
+var queue = await connection.declareQueueAsync("QueueName");
+await queue.bind(exchange);
+await queue.activateConsumer((message: Message) => {
+  console.log("Message received: " + message.getContent());
+});
+```
+
+### Lazy Typescript Example
 
 ```ts
 import { Connection, Message } from "amqp-ts";
@@ -55,8 +80,8 @@ import { Connection, Message } from "amqp-ts";
 var connection = new Connection("amqp://localhost");
 var exchange = connection.declareExchange("ExchangeName");
 var queue = connection.declareQueue("QueueName");
-queue.bind(exchange);
-queue.activateConsumer((message) => {
+void queue.bind(exchange);
+void queue.activateConsumer((message: Message) => {
   console.log("Message received: " + message.getContent());
 });
 
@@ -65,12 +90,12 @@ queue.activateConsumer((message) => {
 var msg = new Message("Test");
 exchange.send(msg);
 
-connection.completeConfiguration().then(() => {
-  // the following message will be received because
-  // everything you defined earlier for this connection now exists
-  var msg2 = new Message("Test2");
-  exchange.send(msg2);
-});
+// This waits until all exchanges/queues/bindings are initialized
+await connection.completeConfiguration();
+// the following message will be received because
+// everything you defined earlier for this connection now exists
+var msg2 = new Message("Test2");
+exchange.send(msg2);
 ```
 
 More examples can be found in the [tutorials directory](https://github.com/abreits/amqp-ts/tree/master/tutorials).
@@ -210,3 +235,60 @@ It's emitted when a error is registered during the connection.
 ### Automatic Reconnection <a name="reconnect"></a>
 
 When the library detects that the connection with the AMQP server is lost, it tries to automatically reconnect to the server.
+
+### Automatic JSON content
+
+If your message content is not a string and not a buffer it is converted automatically to a JSOn string. The `contentType` is set to `application/json` and the `contentEncoding` is set to `utf-8`. Vice versa if you call `getContent()` on the message and the `contentType` is set to `application/json` the string will be parsed and the parsed result will be returned. If you want to avoid the `any` type you can use `getJsonContent<T>()` instead. This method throws an error, if the `contentType` is not set to `application/json`.
+
+### Automatic ReplyTo
+
+If your message consumer returns a value and the `replyTo` property is set in the message property, the value is send to the queue given in the `replyTo` field. The correlationId is set to the response message if it is set in the request. If you don't return any value (a.k.a return `undefined`) no automatic reply is send. You have manage this by yourself then.
+
+Example:
+
+Provider/Publisher side:
+
+```ts
+import { Connection, Message } from "amqp-ts";
+
+var connection = new Connection("amqp://localhost");
+var exchange = await connection.declareExchangeAsync("ExchangeName");
+var queue = await connection.declareQueueAsync("rpc_reply");
+await queue.activateConsumer((message: Message) => {
+  console.log("RPC reply Message received: " + message.properties.correlationId); // should log the ID you set in the message below
+
+  const content = message.getJsonContent<MyResultDto>();
+  console.log("Result is ", content.my); // "Result is result"
+});
+
+// sending the message
+var msg = new Message(
+  { some: "value" },
+  {
+    correlationId: "jC7oTFEeWIfmn_c8Z5Aa",
+    replyTo: "rpc_reply",
+    appId: "app:my-app component:rpc-client",
+  },
+);
+exchange.send(msg, "rpc_queue");
+```
+
+Consumer/Subscriber side:
+
+```ts
+import { Connection, Message } from "amqp-ts";
+
+var connection = new Connection("amqp://localhost");
+var exchange = await connection.declareExchangeAsync("ExchangeName");
+var queue = await connection.declareQueueAsync("rpc_queue");
+await queue.bind(exchange);
+await queue.activateConsumer((message: Message) => {
+  console.log(`Message from ${message.properties.appId} received: ${message.properties.correlationId}`); // "Message from app:my-app component:rpc-client received: jC7oTFEeWIfmn_c8Z5Aa
+
+  const content = message.getJsonContent<MyDto>();
+  console.log("Content is ", content.some); // "Content is value"
+  // process message content
+
+  return { my: "result" };
+});
+```

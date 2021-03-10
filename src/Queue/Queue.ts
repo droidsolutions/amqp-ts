@@ -201,12 +201,11 @@ export class Queue {
         Promise.resolve(result)
           .then((resultValue) => {
             // check if there is a reply-to
-            if (msg.properties.replyTo) {
+            if (msg.properties.replyTo && resultValue) {
               if (!(resultValue instanceof Message)) {
-                resultValue = new Message(resultValue ?? "", {});
+                resultValue = new Message(resultValue, {});
               }
               resultValue.properties.correlationId = msg.properties.correlationId;
-              resultValue.properties.appId = msg.properties.appId;
 
               this._channel.sendToQueue(msg.properties.replyTo, resultValue.content, resultValue.properties);
             }
