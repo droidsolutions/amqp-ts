@@ -73,6 +73,11 @@ export class Message {
     // inline function to send the message
     const sendMessage = (): void => {
       try {
+        if (!this.properties.timestamp) {
+          // Set timetstamp if not set by user
+          this.properties.timestamp = Math.floor(new Date().getTime() / 1000);
+        }
+
         destination._channel.publish(exchange, routingKey, this.content, this.properties);
       } catch (err) {
         const log: SimpleLogger = destination.connection.loggerFactory(this.constructor);

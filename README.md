@@ -100,6 +100,17 @@ exchange.send(msg2);
 
 More examples can be found in the [tutorials directory](https://github.com/abreits/amqp-ts/tree/master/tutorials).
 
+### Messages
+
+A message consists of the content (the data you want to send) and some optional properties that are defined by AMQP. This metadata offers some ways for consumers and providers to know how to process a message. For example when you provide an object as content then it is converted to a JSON string and the `contentType` property is set to `application/json`. This way the consumer knows, that the message should be parsed from json. For a detailed guide on the properties, you can refer to [the RabbitMQ documentation](https://www.rabbitmq.com/consumers.html#message-properties).
+
+Properties that are set by this library are:
+
+- contentType - when you give anything but Buffers and strings to the Message constructor
+- contentEncoding - when you give anything but Buffers and strings to the Message constructor (currently always `utf-8`)
+- timestamp - if not set by you it will be set to the current timestamp in UTC
+- correlationId - if it is specified by the incoming message it will be set to the automatic reply (see below)
+
 ### Logging
 
 The last argument of the `Connection` constructor takes a logger factory function. If you specify it, the function should return a logger that matches the `SimpleLogger` interface. This type is heavily inspired by the style of [Pino](https://github.com/pinojs/pino), but you can write a wrapper for any logger you like. It should support `%s`, `%d` and `%o` string interpolation, as they are used for internal log messages.
@@ -244,7 +255,7 @@ If your message content is not a string and not a buffer it is converted automat
 
 If your message consumer returns a value and the `replyTo` property is set in the message property, the value is send to the queue given in the `replyTo` field. The correlationId is set to the response message if it is set in the request. If you don't return any value (a.k.a return `undefined`) no automatic reply is send. You have manage this by yourself then.
 
-Example:
+Examples:
 
 Provider/Publisher side:
 
