@@ -1,3 +1,10 @@
+# [2.3.0](https://github.com/droidsolutions/amqp-ts/compare/v2.2.1...v2.3.0) (2021-03-12)
+
+
+### Features
+
+* set Timestamp of message when not given by user ([b576a56](https://github.com/droidsolutions/amqp-ts/commit/b576a56dc273e4d6803a0bff7473bda9c4cbe3db))
+
 ## [2.2.1](https://github.com/droidsolutions/amqp-ts/compare/v2.2.0...v2.2.1) (2021-03-10)
 
 
