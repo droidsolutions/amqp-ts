@@ -1,3 +1,10 @@
+## [2.4.1](https://github.com/droidsolutions/amqp-ts/compare/v2.4.0...v2.4.1) (2021-03-22)
+
+
+### Bug Fixes
+
+* update typescript type for options in activateConsumer ([acfd9db](https://github.com/droidsolutions/amqp-ts/commit/acfd9dba949ca0add030ba800fa40c010dfab484))
+
 # [2.4.0](https://github.com/droidsolutions/amqp-ts/compare/v2.3.0...v2.4.0) (2021-03-22)
 
 
