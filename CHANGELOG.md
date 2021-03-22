@@ -1,3 +1,10 @@
+# [2.4.0](https://github.com/droidsolutions/amqp-ts/compare/v2.3.0...v2.4.0) (2021-03-22)
+
+
+### Features
+
+* add message properties to consumer options ([6d73eb5](https://github.com/droidsolutions/amqp-ts/commit/6d73eb518144602abbfb8db20bf030076895ce9c))
+
 # [2.3.0](https://github.com/droidsolutions/amqp-ts/compare/v2.2.1...v2.3.0) (2021-03-12)
 
 
