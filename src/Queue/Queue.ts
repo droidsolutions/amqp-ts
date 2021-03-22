@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/explicit-module-boundary-types */
 import * as AmqpLib from "amqplib/callback_api";
+import { AmqpProperties } from "..";
 import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
 import { Binding } from "../Binding";
 import { Connection } from "../Connection/Connection";
@@ -24,7 +25,7 @@ export class Queue {
   public _consumerInitialized: Promise<StartConsumerResult>;
   private _name: string;
   _consumer: (msg: any, channel?: AmqpLib.Channel) => any;
-  private _consumerOptions: AmqpLib.Options.Consume;
+  private _consumerOptions: AmqpLib.Options.Consume & { properties?: AmqpProperties };
   private _consumerTag: string;
   private _consumerStopping: boolean;
   private _deleting: Promise<DeleteResult>;
@@ -166,7 +167,7 @@ export class Queue {
    *
    * @param onMessage The message handler that is executed when a new message arrives.
    * @param options Options for underlying amqplib. See
-   * @link https://www.squaremobius.net/amqp.node/channel_api.html#channel_consume for more info.
+   * {@link https://www.squaremobius.net/amqp.node/channel_api.html#channel_consume} for more info.
    * @throws {Error} Rejects when a consumer is already bound to this queue.
    * @returns A promise that resolves once the handler is bound to the queue.
    */
@@ -203,7 +204,7 @@ export class Queue {
             // check if there is a reply-to
             if (msg.properties.replyTo && resultValue) {
               if (!(resultValue instanceof Message)) {
-                resultValue = new Message(resultValue, {});
+                resultValue = new Message(resultValue, this._consumerOptions.properties ?? {});
               }
               resultValue.properties.correlationId = msg.properties.correlationId;
 

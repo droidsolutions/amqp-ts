@@ -253,7 +253,7 @@ If your message content is not a string and not a buffer it is converted automat
 
 ### Automatic ReplyTo
 
-If your message consumer returns a value and the `replyTo` property is set in the message property, the value is send to the queue given in the `replyTo` field. The correlationId is set to the response message if it is set in the request. If you don't return any value (a.k.a return `undefined`) no automatic reply is send. You have manage this by yourself then.
+If your message consumer returns a value and the `replyTo` property is set in the message property, the value is send to the queue given in the `replyTo` field. The correlationId is set to the response message if it is set in the request. If you want to set other properties you can specify them when calling `activateConsumer` i nthe options. If you don't return any value (a.k.a return `undefined`) no automatic reply is send. You have manage this by yourself then.
 
 Examples:
 
