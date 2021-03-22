@@ -167,13 +167,14 @@ export class Queue {
    *
    * @param onMessage The message handler that is executed when a new message arrives.
    * @param options Options for underlying amqplib. See
-   * {@link https://www.squaremobius.net/amqp.node/channel_api.html#channel_consume} for more info.
+   * {@link https://www.squaremobius.net/amqp.node/channel_api.html#channel_consume} for more info. You can also
+   * specify AMQP properties to set on reply messages that are fired when the given onMessage handler returns anything.
    * @throws {Error} Rejects when a consumer is already bound to this queue.
    * @returns A promise that resolves once the handler is bound to the queue.
    */
   public activateConsumer(
     onMessage: (msg: Message) => any,
-    options: AmqpLib.Options.Consume = {},
+    options: AmqpLib.Options.Consume & { properties?: AmqpProperties } = {},
   ): Promise<StartConsumerResult> {
     if (this._consumerInitialized !== undefined) {
       return Promise.reject(new Error("amqp-ts Queue.activateConsumer error: consumer already defined"));
