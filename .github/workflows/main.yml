@@ -68,7 +68,7 @@ jobs:
         uses: actions/setup-node@v1
       - run: npm ci
       - name: Download lib from build job
-        uses: actions/download-artifact@v1
+        uses: actions/download-artifact@v2.0.9
         with:
           name: lib
       - name: Semantic Release
