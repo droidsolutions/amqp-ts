@@ -1,5 +1,13 @@
 version: 2
 updates:
+- package-ecosystem: github-actions
+  directory: "/"
+  schedule:
+    interval: weekly
+    time: "04:00"
+  assignees:
+    - "kampfmoehre"
+  open-pull-requests-limit: 10
 - package-ecosystem: npm
   directory: "/"
   schedule:
@@ -9,84 +17,4 @@ updates:
   ignore:
   - dependency-name: "@types/node"
     versions:
-    - 14.14.24
-    - 14.14.25
-    - 14.14.26
-    - 14.14.28
-    - 14.14.31
-    - 14.14.33
-    - 14.14.34
-    - 14.14.36
-    - 14.14.37
-    - 14.14.39
-    - 14.14.41
     - 15.0.0
-  - dependency-name: eslint
-    versions:
-    - 7.20.0
-    - 7.21.0
-    - 7.23.0
-    - 7.24.0
-  - dependency-name: "@types/pino"
-    versions:
-    - 6.3.6
-    - 6.3.7
-  - dependency-name: "@typescript-eslint/parser"
-    versions:
-    - 4.14.2
-    - 4.15.0
-    - 4.15.2
-    - 4.16.1
-    - 4.17.0
-    - 4.19.0
-    - 4.20.0
-    - 4.21.0
-  - dependency-name: "@typescript-eslint/eslint-plugin"
-    versions:
-    - 4.14.1
-    - 4.14.2
-    - 4.15.0
-    - 4.15.1
-    - 4.15.2
-    - 4.16.1
-    - 4.17.0
-    - 4.19.0
-    - 4.20.0
-    - 4.21.0
-  - dependency-name: husky
-    versions:
-    - 5.1.0
-    - 5.1.1
-    - 5.1.2
-    - 5.2.0
-  - dependency-name: mocha
-    versions:
-    - 8.3.2
-  - dependency-name: pino-pretty
-    versions:
-    - 4.7.0
-  - dependency-name: typescript
-    versions:
-    - 4.1.4
-    - 4.2.3
-  - dependency-name: semantic-release
-    versions:
-    - 17.3.8
-    - 17.4.1
-  - dependency-name: amqplib
-    versions:
-    - 0.7.0
-  - dependency-name: "@commitlint/cli"
-    versions:
-    - 12.0.0
-    - 12.0.1
-  - dependency-name: eslint-config-prettier
-    versions:
-    - 8.0.0
-    - 8.1.0
-  - dependency-name: "@types/mocha"
-    versions:
-    - 8.2.1
-  - dependency-name: chai
-    versions:
-    - 4.3.0
