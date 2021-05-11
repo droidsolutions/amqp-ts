@@ -1,3 +1,10 @@
+## [2.4.2](https://github.com/droidsolutions/amqp-ts/compare/v2.4.1...v2.4.2) (2021-05-11)
+
+
+### Bug Fixes
+
+* **deps:** run npm audit fix ([5fef092](https://github.com/droidsolutions/amqp-ts/commit/5fef0925f15d35719f609b36cd24bbcabb290e04))
+
 ## [2.4.1](https://github.com/droidsolutions/amqp-ts/compare/v2.4.0...v2.4.1) (2021-03-22)
 
 
