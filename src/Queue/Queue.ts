@@ -209,6 +209,7 @@ export class Queue {
               }
               resultValue.properties.correlationId = msg.properties.correlationId;
 
+              this.log.debug("Replying directly to queue %s", msg.properties.replyTo);
               this._channel.sendToQueue(msg.properties.replyTo, resultValue.content, resultValue.properties);
             }
           })
