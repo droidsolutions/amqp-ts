@@ -1,3 +1,10 @@
+# [2.5.0](https://github.com/droidsolutions/amqp-ts/compare/v2.4.2...v2.5.0) (2021-07-15)
+
+
+### Features
+
+* update amqplib to 0.8.0 ([9ef47cf](https://github.com/droidsolutions/amqp-ts/commit/9ef47cf36782b99ca069dfee73eb64add2a154c7))
+
 ## [2.4.2](https://github.com/droidsolutions/amqp-ts/compare/v2.4.1...v2.4.2) (2021-05-11)
 
 
