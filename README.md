@@ -249,7 +249,7 @@ When the library detects that the connection with the AMQP server is lost, it tr
 
 ### Automatic JSON content
 
-If your message content is not a string and not a buffer it is converted automatically to a JSOn string. The `contentType` is set to `application/json` and the `contentEncoding` is set to `utf-8`. Vice versa if you call `getContent()` on the message and the `contentType` is set to `application/json` the string will be parsed and the parsed result will be returned. If you want to avoid the `any` type you can use `getJsonContent<T>()` instead. This method throws an error, if the `contentType` is not set to `application/json`.
+If your message content is not a string and not a buffer it is converted automatically to a JSON string. The `contentType` is set to `application/json` and the `contentEncoding` is set to `utf-8`. Vice versa if you call `getContent()` on the message and the `contentType` is set to `application/json` the string will be parsed and the parsed result will be returned. If you want to avoid the `any` type you can use `getJsonContent<T>()` instead. This method throws an error, if the `contentType` is not set to `application/json`.
 
 ### Automatic ReplyTo
 
