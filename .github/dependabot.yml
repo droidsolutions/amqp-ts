@@ -14,7 +14,7 @@ updates:
     interval: daily
     time: "04:00"
   open-pull-requests-limit: 10
-  ignore:
-  - dependency-name: "@types/node"
-    versions:
-    - 15.0.0
+  commit_message:
+    prefix: "fix"
+    prefix_development: "chore"
+    include_scope: true
