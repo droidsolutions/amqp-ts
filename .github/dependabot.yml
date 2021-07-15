@@ -14,7 +14,9 @@ updates:
     interval: daily
     time: "04:00"
   open-pull-requests-limit: 10
-  commit_message:
+  assignees:
+    - "kampfmoehre"
+  commit-message:
     prefix: "fix"
-    prefix_development: "chore"
-    include_scope: true
+    prefix-development: "chore"
+    include: "scope
