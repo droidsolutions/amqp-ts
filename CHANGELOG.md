@@ -1,3 +1,10 @@
+## [2.5.1-develop.1](https://github.com/droidsolutions/amqp-ts/compare/v2.5.0...v2.5.1-develop.1) (2021-07-16)
+
+
+### Bug Fixes
+
+* **npm:** include js and d.ts files in NPM package ([5174079](https://github.com/droidsolutions/amqp-ts/commit/51740791a5204b32bad989fef0cea6d93afe5a95))
+
 # [2.5.0](https://github.com/droidsolutions/amqp-ts/compare/v2.4.2...v2.5.0) (2021-07-15)
 
 
