@@ -35,6 +35,7 @@ jobs:
       with:
         name: lib
         path: lib
+        if-no-files-found: error
 
   test:
     name: Coverage with Node ${{ matrix.node }}
@@ -55,7 +56,7 @@ jobs:
 
   release:
     name: Semantic Release
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop'
     runs-on: [ubuntu-latest]
     needs:
       - lint
@@ -71,6 +72,7 @@ jobs:
         uses: actions/download-artifact@v2.0.10
         with:
           name: lib
+          path: lib
       - name: Semantic Release
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
