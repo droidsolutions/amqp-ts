@@ -56,7 +56,7 @@ jobs:
 
   release:
     name: Semantic Release
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
     runs-on: [ubuntu-latest]
     needs:
       - lint
