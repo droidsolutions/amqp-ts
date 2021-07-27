@@ -15,7 +15,7 @@ jobs:
    steps:
      - uses: actions/checkout@v2
      - name: Use Node.js ${{ matrix.node-version }}
-       uses: actions/setup-node@v2.2.0
+       uses: actions/setup-node@v2.3.0
      - run: npm ci
      - run: npm run lint
 
@@ -24,7 +24,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Use Node.js
-      uses: actions/setup-node@v2.2.0
+      uses: actions/setup-node@v2.3.0
     - run: npm ci
     - run: npm run build
       env:
@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Use Node.js
-        uses: actions/setup-node@v2.2.0
+        uses: actions/setup-node@v2.3.0
         with:
           node-version: ${{ matrix.node }}
       - name: Use RabbitMQ
@@ -65,7 +65,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Use Node.js
-        uses: actions/setup-node@v2.2.0
+        uses: actions/setup-node@v2.3.0
       - run: npm ci
       - name: Download lib from build job
         uses: actions/download-artifact@v2.0.10
