@@ -5,8 +5,6 @@ name: Main
 
 on:
   push:
-  pull_request:
-    branches: [ master, develop ]
 
 jobs:
   lint:
