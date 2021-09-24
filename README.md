@@ -6,16 +6,16 @@
 
 This is a fork of [amqp-ts](https://github.com/abreits/amqp-ts).
 
-## Table of Contents
+# Table of Contents
 
 - [Overview](#overview)
 - [Usage](#usage)
 
-## Overview <a name="overview"></a>
+# Overview <a name="overview"></a>
 
 Amqp-ts is a library for nodejs that simplifies communication with AMQP message busses written in Typescript. It has been tested on RabbitMQ. It uses the [amqplib](http://www.squaremobius.net/amqp.node/) library by [Michael Bridgen (squaremo)](https://github.com/squaremo).
 
-### Difference to the original library
+## Difference to the original library
 
 Changes to the [original amqp-ts](https://github.com/abreits/amqp-ts) package:
 
@@ -24,15 +24,16 @@ Changes to the [original amqp-ts](https://github.com/abreits/amqp-ts) package:
 - dropped winston as dependency, instead a factory can be provided to the connection constructor which returns any logger.
 - the deprecated methods like `Exchange.publish`, `Exchange.startConsumer`, `Queue.publish` and `Queue.startConsumer` are removed from this library, since their replacements like `Exchange.send` and `Exchange.activateConsumer` already existed.
 - fixes for https://github.com/abreits/amqp-ts/pull/46 and https://github.com/abreits/amqp-ts/issues/20 have been implemented
+- add basic metrics
 
-### Defining Features
+## Defining Features
 
 - [High level non opinioned library], no need to worry about channels etc.
 - ['Lazy' initialization](#initialization), async AMQP dependencies are resolved automatically
 - [Automatic reconnection](#reconnect), when the connection with the AMQP server fails, the whole connection and configuration is rebuilt automatically
 - Written in typescript.
 
-### Current status
+## Current status
 
 The library is considered production ready.
 
@@ -40,18 +41,18 @@ It does depend on the following npm libraries:
 
 - [amqplib](http://www.squaremobius.net/amqp.node/)
 
-### Lazy Initialization <a name="initialization"></a>
+## Lazy Initialization <a name="initialization"></a>
 
 No need to nest functionality, just create a connection, declare your exchanges, queues and
 bindings and send and receive messages. The library takes care of any direct dependencies.
 
 If you define an exchange and a queue and bind the queue to the exchange and want to make sure that the queue is connected to the exchange before you send a message to the exchange you can call the `connection.completeConfiguration()` method and act on the promise it returns.
 
-## Usage <a name="usage"></a>
+# Usage <a name="usage"></a>
 
 There are multiple ways to declare your exchanges, queues and bindings. Each of those has an `initialized` property which is a promise that resolves when initialization is complete. You can either await it yourself or call `completeConfiguration` on the connection like explained in [Lazy initialization](#initialization).
 
-### Async Typescript Example
+## Async Typescript Example
 
 ```ts
 import { Connection, Message } from "amqp-ts";
@@ -72,7 +73,7 @@ await queue.activateConsumer((message: Message) => {
 });
 ```
 
-### Lazy Typescript Example
+## Lazy Typescript Example
 
 ```ts
 import { Connection, Message } from "amqp-ts";
@@ -100,7 +101,7 @@ exchange.send(msg2);
 
 More examples can be found in the [tutorials directory](https://github.com/abreits/amqp-ts/tree/master/tutorials).
 
-### Messages
+## Messages
 
 A message consists of the content (the data you want to send) and some optional properties that are defined by AMQP. This metadata offers some ways for consumers and providers to know how to process a message. For example when you provide an object as content then it is converted to a JSON string and the `contentType` property is set to `application/json`. This way the consumer knows, that the message should be parsed from json. For a detailed guide on the properties, you can refer to [the RabbitMQ documentation](https://www.rabbitmq.com/consumers.html#message-properties).
 
@@ -111,7 +112,7 @@ Properties that are set by this library are:
 - timestamp - if not set by you it will be set to the current timestamp in UTC
 - correlationId - if it is specified by the incoming message it will be set to the automatic reply (see below)
 
-### Logging
+## Logging
 
 The last argument of the `Connection` constructor takes a logger factory function. If you specify it, the function should return a logger that matches the `SimpleLogger` interface. This type is heavily inspired by the style of [Pino](https://github.com/pinojs/pino), but you can write a wrapper for any logger you like. It should support `%s`, `%d` and `%o` string interpolation, as they are used for internal log messages.
 
@@ -213,11 +214,11 @@ const loggerFactory = (context, meta) => {
 };
 ```
 
-### Connection Status
+## Connection Status
 
 To know the status of the connection: `connection.isConnected`. Returns true if the connection exists and false, otherwise.
 
-### Events
+## Events
 
     #on('open_connection', function() {...})
 
@@ -243,15 +244,15 @@ It is emitted when the connection is re-established.
 
 It's emitted when a error is registered during the connection.
 
-### Automatic Reconnection <a name="reconnect"></a>
+## Automatic Reconnection <a name="reconnect"></a>
 
 When the library detects that the connection with the AMQP server is lost, it tries to automatically reconnect to the server.
 
-### Automatic JSON content
+## Automatic JSON content
 
 If your message content is not a string and not a buffer it is converted automatically to a JSON string. The `contentType` is set to `application/json` and the `contentEncoding` is set to `utf-8`. Vice versa if you call `getContent()` on the message and the `contentType` is set to `application/json` the string will be parsed and the parsed result will be returned. If you want to avoid the `any` type you can use `getJsonContent<T>()` instead. This method throws an error, if the `contentType` is not set to `application/json`.
 
-### Automatic ReplyTo
+## Automatic ReplyTo
 
 If your message consumer returns a value and the `replyTo` property is set in the message property, the value is send to the queue given in the `replyTo` field. The correlationId is set to the response message if it is set in the request. If you want to set other properties you can specify them when calling `activateConsumer` i nthe options. If you don't return any value (a.k.a return `undefined`) no automatic reply is send. You have manage this by yourself then.
 
@@ -303,3 +304,9 @@ await queue.activateConsumer((message: Message) => {
   return { my: "result" };
 });
 ```
+
+## Metrics
+
+The connection instance offers a method that returns basic metrics of the connection. For the metrics there is a TypeScript interface `ConnectionMetrics` that contains possible metrics of the connection.
+
+To receive them you can call `getMetrics()` on the connection instance.

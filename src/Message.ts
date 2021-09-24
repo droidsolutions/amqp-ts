@@ -74,11 +74,12 @@ export class Message {
     const sendMessage = (): void => {
       try {
         if (!this.properties.timestamp) {
-          // Set timetstamp if not set by user
+          // Set timestamp if not set by user
           this.properties.timestamp = Math.floor(new Date().getTime() / 1000);
         }
 
         destination._channel.publish(exchange, routingKey, this.content, this.properties);
+        destination.connection._increaseCounter("sentMessages");
       } catch (err) {
         const log: SimpleLogger = destination.connection.loggerFactory(this.constructor);
         log.debug({ err }, "Publish error: %s", (err as Error).message);

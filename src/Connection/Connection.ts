@@ -7,6 +7,7 @@ import { ExchangeType } from "../Exchange/ExchangeType";
 import { EmtpyLogger, LoggerFactory, SimpleLogger } from "../LoggerFactory";
 import { DeclarationOptions as QueueDeclrationOptions } from "../Queue/DeclarationOptions";
 import { Queue } from "../Queue/Queue";
+import { ConnectionMetrics } from "./ConnectionMetrics";
 import { ReconnectStrategy } from "./ReconnectStrategy";
 import { Topology } from "./Topology";
 
@@ -32,6 +33,8 @@ export class Connection extends EventEmitter {
   private _rebuilding = false;
   private _isClosing = false;
   private log: SimpleLogger;
+  private _sentMessagesCounter = 0;
+  private _receivedMessagesCounter = 0;
 
   /**
    *
@@ -222,7 +225,7 @@ export class Connection extends EventEmitter {
   }
 
   /**
-   * Declares a new exchange. Dependent on the options it auto creates the exchange if it doesn ot already exists.
+   * Declares a new exchange. Dependent on the options it auto creates the exchange if it does not already exists.
    *
    * @param name The name of the exchange.
    * @param type The type
@@ -234,6 +237,7 @@ export class Connection extends EventEmitter {
     if (exchange === undefined) {
       exchange = new Exchange(this, name, type, options);
     }
+
     return exchange;
   }
 
@@ -321,6 +325,17 @@ export class Connection extends EventEmitter {
     return this.connection;
   }
 
+  /**
+   * Returns an object with metrics about the connection.
+   * @returns An object containing metrics about the connection.
+   */
+  public getMetrics(): ConnectionMetrics {
+    return {
+      receivedMessagesCounter: this._receivedMessagesCounter,
+      sentMessagesCounter: this._sentMessagesCounter,
+    };
+  }
+
   private rebuildConnection(): Promise<void> {
     if (this._rebuilding) {
       // only one rebuild process can be active at any time
@@ -358,5 +373,21 @@ export class Connection extends EventEmitter {
       //throw (err);
     });
     return this.initialized;
+  }
+
+  /**
+   * Increments an internal counter.
+   * @param counter The counter to increase.
+   * @param value The increment, default is 1.
+   */
+  public _increaseCounter(counter: "receivedMessages" | "sentMessages", value = 1): void {
+    switch (counter) {
+      case "receivedMessages":
+        this._receivedMessagesCounter += value;
+        break;
+      case "sentMessages":
+        this._sentMessagesCounter += value;
+        break;
+    }
   }
 }

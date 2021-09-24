@@ -66,6 +66,7 @@ export class Queue {
               reject(createChannelError);
             } else {
               this._channel = channel;
+              this._channel.on("delivery", this.handleReceivedMessageEvent.bind(this));
               const callback = (err: Error, ok: InitializeResult): void => {
                 /* istanbul ignore if */
                 if (err) {
@@ -294,6 +295,7 @@ export class Queue {
               } else {
                 delete this.initialized; // invalidate queue
                 delete this.connection._queues[this._name]; // remove the queue from our administration
+                this._channel.removeListener("delivery", this.handleReceivedMessageEvent.bind(this));
                 this._channel.close((channelCloseError) => {
                   /* istanbul ignore if */
                   if (channelCloseError) {
@@ -331,6 +333,7 @@ export class Queue {
           .then(() => {
             delete this.initialized; // invalidate queue
             delete this.connection._queues[this._name]; // remove the queue from our administration
+            this._channel.removeListener("delivery", this.handleReceivedMessageEvent.bind(this));
             this._channel.close((err) => {
               /* istanbul ignore if */
               if (err) {
@@ -371,5 +374,9 @@ export class Queue {
    */
   public unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
     return this.connection._bindings[Binding.id(this, source, pattern)].delete();
+  }
+  
+  private handleReceivedMessageEvent(_args: any[]): void {
+    this.connection._increaseCounter("receivedMessages");
   }
 }
