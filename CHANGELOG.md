@@ -1,3 +1,10 @@
+# [2.6.0](https://github.com/droidsolutions/amqp-ts/compare/v2.5.1...v2.6.0) (2021-09-24)
+
+
+### Features
+
+* add basic metrics to the connection instance ([88cba45](https://github.com/droidsolutions/amqp-ts/commit/88cba45ea8756ac8a16c6f8a51e0cf7962d0ed1a))
+
 ## [2.5.1](https://github.com/droidsolutions/amqp-ts/compare/v2.5.0...v2.5.1) (2021-07-16)
 
 
