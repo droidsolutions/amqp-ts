@@ -86,7 +86,7 @@ export class Message {
         const destinationName = destination.name;
         const connection = destination.connection;
         log.debug("Try to rebuild connection, before Call.");
-        connection._rebuildAll(err).then(() => {
+        connection._rebuildAll(err as Error).then(() => {
           log.debug("Retransmitting message.");
           if (destination instanceof Queue) {
             // connection._queues[destinationName].publish(this.content, this.properties);

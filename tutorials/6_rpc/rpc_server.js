@@ -18,6 +18,7 @@ function fibonacci(n) {
 // this will keep running until the program is halted or is stopped with queue.stopConsumer()
 queue.activateConsumer(
   function (message) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const n = parseInt(message.getContent());
     console.log(" [.] fib(" + n + ")");
 

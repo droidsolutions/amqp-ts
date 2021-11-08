@@ -66,6 +66,7 @@ export class Queue {
               reject(createChannelError);
             } else {
               this._channel = channel;
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
               this._channel.on("delivery", this.handleReceivedMessageEvent.bind(this));
               const callback = (err: Error, ok: InitializeResult): void => {
                 /* istanbul ignore if */
@@ -89,6 +90,7 @@ export class Queue {
           });
         })
         .catch((err) => {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           this.log.warn(err, "Channel failure, error caused during connection!");
         });
     });
@@ -211,7 +213,11 @@ export class Queue {
               resultValue.properties.correlationId = msg.properties.correlationId;
 
               this.log.debug("Replying directly to queue %s", msg.properties.replyTo);
-              this._channel.sendToQueue(msg.properties.replyTo, resultValue.content, resultValue.properties);
+              this._channel.sendToQueue(
+                msg.properties.replyTo as string,
+                resultValue.content as Buffer,
+                resultValue.properties as AmqpLib.Options.Publish,
+              );
             }
           })
           .catch((err) => {
@@ -295,6 +301,7 @@ export class Queue {
               } else {
                 delete this.initialized; // invalidate queue
                 delete this.connection._queues[this._name]; // remove the queue from our administration
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 this._channel.removeListener("delivery", this.handleReceivedMessageEvent.bind(this));
                 this._channel.close((channelCloseError) => {
                   /* istanbul ignore if */
@@ -333,6 +340,7 @@ export class Queue {
           .then(() => {
             delete this.initialized; // invalidate queue
             delete this.connection._queues[this._name]; // remove the queue from our administration
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this._channel.removeListener("delivery", this.handleReceivedMessageEvent.bind(this));
             this._channel.close((err) => {
               /* istanbul ignore if */
@@ -375,7 +383,7 @@ export class Queue {
   public unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
     return this.connection._bindings[Binding.id(this, source, pattern)].delete();
   }
-  
+
   private handleReceivedMessageEvent(_args: any[]): void {
     this.connection._increaseCounter("receivedMessages");
   }

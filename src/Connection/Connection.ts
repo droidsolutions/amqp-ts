@@ -5,7 +5,7 @@ import { DeclarationOptions as ExchangeDeclarationOptions } from "../Exchange/De
 import { Exchange } from "../Exchange/Exchange";
 import { ExchangeType } from "../Exchange/ExchangeType";
 import { EmtpyLogger, LoggerFactory, SimpleLogger } from "../LoggerFactory";
-import { DeclarationOptions as QueueDeclrationOptions } from "../Queue/DeclarationOptions";
+import { DeclarationOptions as QueueDeclarationOptions } from "../Queue/DeclarationOptions";
 import { Queue } from "../Queue/Queue";
 import { ConnectionMetrics } from "./ConnectionMetrics";
 import { ReconnectStrategy } from "./ReconnectStrategy";
@@ -81,7 +81,7 @@ export class Connection extends EventEmitter {
           this.log.warn("Connection retry %d in %d ms", retry + 1, thisConnection.reconnectStrategy.interval);
           thisConnection.emit("trying_connect");
           setTimeout(
-            // eslint-disable-next-line @typescript-eslint/no-implied-eval
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             thisConnection.tryToConnect.bind(this),
             thisConnection.reconnectStrategy.interval,
             thisConnection,
@@ -267,7 +267,7 @@ export class Connection extends EventEmitter {
    * @param options Any options for the queue declaration.
    * @returns The queue.
    */
-  public declareQueue(name: string, options?: QueueDeclrationOptions): Queue {
+  public declareQueue(name: string, options?: QueueDeclarationOptions): Queue {
     let queue = this._queues[name];
     if (queue === undefined) {
       queue = new Queue(this, name, options);
@@ -282,7 +282,7 @@ export class Connection extends EventEmitter {
    * @param options Any options for the queue declaration.
    * @returns A promise that resolves when the queue is declared and initialized.
    */
-  public async declareQueueAsync(name: string, options?: QueueDeclrationOptions): Promise<Queue> {
+  public async declareQueueAsync(name: string, options?: QueueDeclarationOptions): Promise<Queue> {
     const queue = this.declareQueue(name, options);
     await queue.initialized;
 
@@ -296,13 +296,16 @@ export class Connection extends EventEmitter {
     if (topology.exchanges !== undefined) {
       for (i = 0, len = topology.exchanges.length; i < len; i++) {
         const exchange = topology.exchanges[i];
-        promises.push(this.declareExchange(exchange.name, exchange.type, exchange.options).initialized);
+        promises.push(
+          this.declareExchange(exchange.name, exchange.type, exchange.options as ExchangeDeclarationOptions)
+            .initialized,
+        );
       }
     }
     if (topology.queues !== undefined) {
       for (i = 0, len = topology.queues.length; i < len; i++) {
         const queue = topology.queues[i];
-        promises.push(this.declareQueue(queue.name, queue.options).initialized);
+        promises.push(this.declareQueue(queue.name, queue.options as QueueDeclarationOptions).initialized);
       }
     }
     if (topology.bindings !== undefined) {
