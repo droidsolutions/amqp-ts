@@ -66,7 +66,7 @@ jobs:
         uses: actions/setup-node@v2.5.0
       - run: npm ci
       - name: Download lib from build job
-        uses: actions/download-artifact@v2.0.10
+        uses: actions/download-artifact@v2.1.0
         with:
           name: lib
           path: lib
