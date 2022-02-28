@@ -1,3 +1,10 @@
+## [2.6.2](https://github.com/droidsolutions/amqp-ts/compare/v2.6.1...v2.6.2) (2022-02-28)
+
+
+### Bug Fixes
+
+* **deps:** bump url-parse from 1.5.7 to 1.5.10 ([e232a35](https://github.com/droidsolutions/amqp-ts/commit/e232a35561ea2084e992a4b128352e9a2e309818))
+
 ## [2.6.1](https://github.com/droidsolutions/amqp-ts/compare/v2.6.0...v2.6.1) (2022-02-21)
 
 
