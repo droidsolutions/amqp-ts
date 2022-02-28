@@ -1,3 +1,10 @@
+## [2.6.3](https://github.com/droidsolutions/amqp-ts/compare/v2.6.2...v2.6.3) (2022-02-28)
+
+
+### Bug Fixes
+
+* **deps:** bump node-fetch from 2.6.2 to 2.6.7 ([0256384](https://github.com/droidsolutions/amqp-ts/commit/025638421b856efce76bc462b4728b5e05aeef88))
+
 ## [2.6.2](https://github.com/droidsolutions/amqp-ts/compare/v2.6.1...v2.6.2) (2022-02-28)
 
 
