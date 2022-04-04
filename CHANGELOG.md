@@ -1,3 +1,10 @@
+## [2.6.4](https://github.com/droidsolutions/amqp-ts/compare/v2.6.3...v2.6.4) (2022-04-04)
+
+
+### Bug Fixes
+
+* **deps:** bump minimist from 1.2.5 to 1.2.6 ([fdc830a](https://github.com/droidsolutions/amqp-ts/commit/fdc830a2b67028520bae0af3f512bb34f1bd2766))
+
 ## [2.6.3](https://github.com/droidsolutions/amqp-ts/compare/v2.6.2...v2.6.3) (2022-02-28)
 
 
