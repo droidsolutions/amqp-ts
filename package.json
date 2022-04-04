@@ -61,7 +61,7 @@
     "nyc": "15.1.0",
     "pino": "6.13.3",
     "pino-pretty": "7.5.4",
-    "prettier": "2.6.1",
+    "prettier": "2.6.2",
     "rimraf": "3.0.2",
     "semantic-release": "19.0.2",
     "source-map-support": "0.5.21",
