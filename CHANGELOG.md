@@ -1,3 +1,10 @@
+## [2.6.7](https://github.com/droidsolutions/amqp-ts/compare/v2.6.6...v2.6.7) (2022-06-03)
+
+
+### Bug Fixes
+
+* **deps:** bump amqplib from 0.9.1 to 0.10.0 ([c3d989c](https://github.com/droidsolutions/amqp-ts/commit/c3d989c5c0d4fb1473c75b824e231a5053b887cf))
+
 ## [2.6.6](https://github.com/droidsolutions/amqp-ts/compare/v2.6.5...v2.6.6) (2022-05-23)
 
 
