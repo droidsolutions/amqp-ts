@@ -1,3 +1,10 @@
+## [2.6.8](https://github.com/droidsolutions/amqp-ts/compare/v2.6.7...v2.6.8) (2022-06-08)
+
+
+### Bug Fixes
+
+* **deps:** bump semver-regex from 3.1.3 to 3.1.4 ([695c272](https://github.com/droidsolutions/amqp-ts/commit/695c272eba2ed9948781924272bbde6923ff6b54))
+
 ## [2.6.7](https://github.com/droidsolutions/amqp-ts/compare/v2.6.6...v2.6.7) (2022-06-03)
 
 
