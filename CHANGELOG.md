@@ -1,3 +1,10 @@
+## [2.6.12](https://github.com/droidsolutions/amqp-ts/compare/v2.6.11...v2.6.12) (2023-02-08)
+
+
+### Bug Fixes
+
+* **deps:** bump json5 from 2.1.3 to 2.2.3 ([2d266c5](https://github.com/droidsolutions/amqp-ts/commit/2d266c52d50dc50c4f11b7234f28dfc06200e4f8))
+
 ## [2.6.11](https://github.com/droidsolutions/amqp-ts/compare/v2.6.10...v2.6.11) (2022-09-02)
 
 
