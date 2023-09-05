@@ -41,7 +41,7 @@
     "@semantic-release/changelog": "6.0.3",
     "@semantic-release/git": "10.0.1",
     "@types/amqplib": "0.10.1",
-    "@types/chai-as-promised": "7.1.5",
+    "@types/chai-as-promised": "7.1.6",
     "@types/mocha": "10.0.1",
     "@types/node": "20.5.9",
     "@types/pino": "6.3.12",
