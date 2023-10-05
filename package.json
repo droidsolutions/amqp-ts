@@ -59,7 +59,7 @@
     "mocha": "10.2.0",
     "nyc": "15.1.0",
     "pino": "6.13.3",
-    "pino-pretty": "10.2.2",
+    "pino-pretty": "10.2.3",
     "prettier": "3.0.3",
     "rimraf": "5.0.5",
     "semantic-release": "22.0.5",
