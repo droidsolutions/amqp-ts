@@ -85,6 +85,7 @@ describe("AMQP Connection class automatic reconnection", function () {
   }
 
   this.timeout(UnitTestLongTimeout); // define long timeout for rabbitmq service restart
+
   it("should reconnect a queue when detecting a broken connection because of a server restart", function (done) {
     // initialize
     const connection = new Connection(ConnectionUrl);
