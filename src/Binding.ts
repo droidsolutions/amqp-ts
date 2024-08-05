@@ -113,7 +113,7 @@ export class Binding {
           queue._channel.unbindQueue(this._destination.name, this._source.name, this.pattern, this.args, (err, _ok) => {
             /* istanbul ignore if */
             if (err) {
-              reject(err);
+              reject(err as Error);
             } else {
               delete this._destination.connection._bindings[Binding.id(this._destination, this._source, this.pattern)];
               resolve(null);
@@ -131,7 +131,7 @@ export class Binding {
             (err, _ok) => {
               /* istanbul ignore if */
               if (err) {
-                reject(err);
+                reject(err as Error);
               } else {
                 delete this._destination.connection._bindings[
                   Binding.id(this._destination, this._source, this.pattern)

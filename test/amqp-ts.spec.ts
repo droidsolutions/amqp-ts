@@ -454,7 +454,7 @@ describe("Test amqp-ts module", function () {
       await new Promise<void>((resolve, reject) => {
         currentConnection.connection.close((err) => {
           if (err) {
-            reject(err);
+            reject(err as Error);
           } else {
             // it should auto reconnect and send the message
             const msg = new Message("Test");
@@ -486,7 +486,7 @@ describe("Test amqp-ts module", function () {
         // break connection
         currentConnection.connection.close((err) => {
           if (err) {
-            reject(err);
+            reject(err as Error);
           } else {
             // it should auto reconnect and send the message
             const msg = new Message("Test");
