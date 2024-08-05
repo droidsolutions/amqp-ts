@@ -150,7 +150,7 @@ export class Connection extends EventEmitter {
         },
         /* istanbul ignore next */ (rejectReason) => {
           this.log.debug("Rebuild failed.");
-          reject(rejectReason);
+          reject(rejectReason as Error);
         },
       );
     });
@@ -163,7 +163,7 @@ export class Connection extends EventEmitter {
         this.connection.close((err) => {
           /* istanbul ignore if */
           if (err) {
-            reject(err);
+            reject(err as Error);
           } else {
             this.isConnected = false;
             this.emit("close_connection");
@@ -354,7 +354,7 @@ export class Connection extends EventEmitter {
         /* istanbul ignore if */
         if (err) {
           this._rebuilding = false;
-          reject(err);
+          reject(err as Error);
         } else {
           this._rebuilding = false;
           if (this.connectedBefore) {

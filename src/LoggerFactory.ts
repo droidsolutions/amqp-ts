@@ -3,7 +3,7 @@
  * A function that retrieves an instance of a logger.
  */
 export interface LoggerFactory {
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   (context: Function | string, meta?: { [key: string]: any }): SimpleLogger;
 }
 

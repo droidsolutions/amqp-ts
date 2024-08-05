@@ -63,7 +63,7 @@ export class Queue {
           this.connection.connection.createChannel((createChannelError, channel) => {
             /* istanbul ignore if */
             if (createChannelError) {
-              reject(createChannelError);
+              reject(createChannelError as Error);
             } else {
               this._channel = channel;
               // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -156,7 +156,7 @@ export class Queue {
       this.initialized.then(() => {
         this._channel.recover((err, _ok) => {
           if (err) {
-            reject(err);
+            reject(err as Error);
           } else {
             resolve(null);
           }
@@ -244,7 +244,7 @@ export class Queue {
         this._channel.consume(this._name, activateConsumerWrapper, this._consumerOptions, (err, ok) => {
           /* istanbul ignore if */
           if (err) {
-            reject(err);
+            reject(err as Error);
           } else {
             this._consumerTag = ok.consumerTag;
             resolve(ok);
@@ -267,7 +267,7 @@ export class Queue {
         this._channel.cancel(this._consumerTag, (err, _ok) => {
           /* istanbul ignore if */
           if (err) {
-            reject(err);
+            reject(err as Error);
           } else {
             delete this._consumerInitialized;
             delete this._consumer;
@@ -306,7 +306,7 @@ export class Queue {
                 this._channel.close((channelCloseError) => {
                   /* istanbul ignore if */
                   if (channelCloseError) {
-                    reject(channelCloseError);
+                    reject(channelCloseError as Error);
                   } else {
                     delete this._channel;
                     delete this.connection;
@@ -317,7 +317,7 @@ export class Queue {
             });
           })
           .catch((err) => {
-            reject(err);
+            reject(err as Error);
           });
       });
     }
@@ -345,7 +345,7 @@ export class Queue {
             this._channel.close((err) => {
               /* istanbul ignore if */
               if (err) {
-                reject(err);
+                reject(err as Error);
               } else {
                 delete this._channel;
                 delete this.connection;
@@ -354,7 +354,7 @@ export class Queue {
             });
           })
           .catch((err) => {
-            reject(err);
+            reject(err as Error);
           });
       });
     }

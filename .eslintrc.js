@@ -16,7 +16,7 @@ module.exports = {
     "prettier",
     "plugin:node/recommended-module",
   ],
-  ignorePatterns: ["coverage", "lib", "test/__test", ".eslintrc.js"],
+  ignorePatterns: ["coverage", "lib", "test/__test", "tools/alive.js", "tutorials/**/*.js", ".eslintrc.js"],
   settings: {
     node: {
       tryExtensions: [".js", ".json", ".node", ".ts"],
@@ -28,7 +28,6 @@ module.exports = {
     "max-classes-per-file": ["error", 1],
     "max-len": ["warn", { code: 120 }],
     "no-console": "error",
-    "@typescript-eslint/ban-types": "error",
     "@typescript-eslint/naming-convention": [
       "warn",
       {
@@ -49,7 +48,6 @@ module.exports = {
         argsIgnorePattern: "^_",
       },
     ],
-    "@typescript-eslint/quotes": ["warn", "double", { allowTemplateLiterals: true }],
     "@typescript-eslint/no-floating-promises": ["off"],
   },
   overrides: [

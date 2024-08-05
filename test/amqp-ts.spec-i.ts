@@ -8,6 +8,8 @@
  * Created by Ab on 2015-10-21.
  */
 import * as Chai from "chai";
+import { exec, execSync } from "node:child_process";
+import { platform } from "node:os";
 import * as pino from "pino";
 import { Connection } from "../src/Connection/Connection";
 import { Message } from "../src/Message";
@@ -22,9 +24,7 @@ const UnitTestLongTimeout = process.env.AMQPTEST_LONG_TIMEOUT || 60000;
 const LogLevel = process.env.AMQPTEST_LOGLEVEL || "silent";
 
 // needed for server restart tests
-const os = require("os");
-const isWin = os.platform().startsWith("win");
-const cp = require("child_process");
+const isWin = platform().startsWith("win");
 
 const logger = pino({
   name: "amqp-ts integration-test",
@@ -46,8 +46,8 @@ function restartAmqpServer() {
   console.log("shutdown and restart rabbitmq");
   if (isWin) {
     try {
-      cp.execSync("net stop rabbitmq");
-      cp.exec("net start rabbitmq");
+      execSync("net stop rabbitmq");
+      exec("net start rabbitmq");
     } catch (err) {
       logger.error(
         { err },
@@ -57,7 +57,7 @@ function restartAmqpServer() {
     }
   } else {
     try {
-      cp.execSync("./tools/restart-rabbit.sh");
+      execSync("./tools/restart-rabbit.sh");
     } catch (err) {
       logger.error({ err }, "Unable to shutdown and restart RabbitMQ");
       throw new Error("Unable to restart rabbitmq, error:\n" + (err as Error).message);

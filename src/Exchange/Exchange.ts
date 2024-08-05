@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import * as AmqpLib from "amqplib/callback_api";
 import * as os from "os";
@@ -69,7 +68,7 @@ export class Exchange {
           this.connection.connection.createChannel((createChannelError, channel) => {
             /* istanbul ignore if */
             if (createChannelError) {
-              reject(createChannelError);
+              reject(createChannelError as Error);
             } else {
               this._channel = channel;
               const callback = (err: Error, ok: InitializeResult): void => {
@@ -129,7 +128,7 @@ export class Exchange {
               result.fields = resultMsg.fields;
               for (const handler of this._consumer_handlers) {
                 if (handler[0] === resultMsg.properties.correlationId) {
-                  const func: Function = handler[1];
+                  const func: () => void = handler[1];
                   func.apply("", [undefined, result]);
                 }
               }
@@ -183,14 +182,14 @@ export class Exchange {
             this._channel.deleteExchange(this._name, {}, (deleteExchangeError, _ok) => {
               /* istanbul ignore if */
               if (deleteExchangeError) {
-                reject(deleteExchangeError);
+                reject(deleteExchangeError as Error);
               } else {
                 this._channel.close((channelCloseError) => {
                   delete this.initialized; // invalidate exchange
                   delete this.connection._exchanges[this._name]; // remove the exchange from our administration
                   /* istanbul ignore if */
                   if (channelCloseError) {
-                    reject(channelCloseError);
+                    reject(channelCloseError as Error);
                   } else {
                     delete this._channel;
                     delete this.connection;
@@ -201,7 +200,7 @@ export class Exchange {
             });
           })
           .catch((err) => {
-            reject(err);
+            reject(err as Error);
           });
       });
     }
@@ -224,7 +223,7 @@ export class Exchange {
             this._channel.close((err) => {
               /* istanbul ignore if */
               if (err) {
-                reject(err);
+                reject(err as Error);
               } else {
                 delete this._channel;
                 delete this.connection;
@@ -233,7 +232,7 @@ export class Exchange {
             });
           })
           .catch((err) => {
-            reject(err);
+            reject(err as Error);
           });
       });
     }
