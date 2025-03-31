@@ -7,7 +7,7 @@ updates:
       interval: weekly
       time: "04:00"
     assignees:
-      - "kampfmoehre"
+      - "Kampfmoehre"
     open-pull-requests-limit: 10
   - directory: "/"
     groups:
@@ -23,7 +23,7 @@ updates:
       interval: daily
       time: "04:00"
     assignees:
-      - "kampfmoehre"
+      - "Kampfmoehre"
     commit-message:
       prefix: "fix"
       prefix-development: "chore"
