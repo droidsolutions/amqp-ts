@@ -1,3 +1,10 @@
+## [2.6.18](https://github.com/droidsolutions/amqp-ts/compare/v2.6.17...v2.6.18) (2025-09-11)
+
+
+### Bug Fixes
+
+* raise minimum amqplib version for fix ([76c6278](https://github.com/droidsolutions/amqp-ts/commit/76c62781924c55f9293a10420c6edfce389d6b40))
+
 ## [2.6.17](https://github.com/droidsolutions/amqp-ts/compare/v2.6.16...v2.6.17) (2025-09-04)
 
 
