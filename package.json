@@ -33,7 +33,7 @@
     "test-integration": "gulp test:integration"
   },
   "dependencies": {
-    "amqplib": "^0.10.0"
+    "amqplib": "^0.10.9"
   },
   "devDependencies": {
     "@commitlint/cli": "19.8.1",
