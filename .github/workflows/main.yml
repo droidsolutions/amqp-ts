@@ -68,7 +68,7 @@ jobs:
           node-version: 24
       - run: npm ci
       - name: Download lib from build job
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: lib
           path: lib
