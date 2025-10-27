@@ -40,7 +40,7 @@
     "@commitlint/config-conventional": "20.0.0",
     "@semantic-release/changelog": "6.0.3",
     "@semantic-release/git": "10.0.1",
-    "@types/amqplib": "0.10.7",
+    "@types/amqplib": "0.10.8",
     "@types/chai-as-promised": "7.1.8",
     "@types/mocha": "10.0.10",
     "@types/node": "24.9.1",
