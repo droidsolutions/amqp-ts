@@ -1,3 +1,10 @@
+## [2.6.19](https://github.com/droidsolutions/amqp-ts/compare/v2.6.18...v2.6.19) (2025-11-18)
+
+
+### Bug Fixes
+
+* **deps:** bump js-yaml ([30bb6c1](https://github.com/droidsolutions/amqp-ts/commit/30bb6c1b85122be62b645407033c6ca44d28abcc))
+
 ## [2.6.18](https://github.com/droidsolutions/amqp-ts/compare/v2.6.17...v2.6.18) (2025-09-11)
 
 
