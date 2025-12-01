@@ -1,3 +1,10 @@
+## [2.6.20](https://github.com/droidsolutions/amqp-ts/compare/v2.6.19...v2.6.20) (2025-12-01)
+
+
+### Bug Fixes
+
+* **deps:** bump tar and npm ([1f946b4](https://github.com/droidsolutions/amqp-ts/commit/1f946b4703b3cc391fcc386e932e2c265f7d0f0f))
+
 ## [2.6.19](https://github.com/droidsolutions/amqp-ts/compare/v2.6.18...v2.6.19) (2025-11-18)
 
 
