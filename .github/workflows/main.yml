@@ -40,14 +40,23 @@ jobs:
     strategy:
       matrix:
         node: [ '22', '24' ]
+    services:
+      rabbitmq:
+        image: rabbitmq:4.2-management-alpine
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v6
       - name: Use Node.js
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
-      - name: Use RabbitMQ
-        uses: nijel/rabbitmq-action@v1.0.0
       - run: npm ci
       - run: npm run test:coverage
 
