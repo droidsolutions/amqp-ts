@@ -1,3 +1,10 @@
+## [2.6.24](https://github.com/droidsolutions/amqp-ts/compare/v2.6.23...v2.6.24) (2026-03-26)
+
+
+### Bug Fixes
+
+* **deps:** bump picomatch ([977d324](https://github.com/droidsolutions/amqp-ts/commit/977d3247cfeb621c1d85a1c0f18cc258bfe9881f))
+
 ## [2.6.23](https://github.com/droidsolutions/amqp-ts/compare/v2.6.22...v2.6.23) (2026-03-13)
 
 
