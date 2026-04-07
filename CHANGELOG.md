@@ -1,3 +1,10 @@
+## [2.6.25](https://github.com/droidsolutions/amqp-ts/compare/v2.6.24...v2.6.25) (2026-04-07)
+
+
+### Bug Fixes
+
+* **deps:** bump lodash from 4.17.23 to 4.18.1 ([69ddecd](https://github.com/droidsolutions/amqp-ts/commit/69ddecd27ca128945e421e47740406a067e72def))
+
 ## [2.6.24](https://github.com/droidsolutions/amqp-ts/compare/v2.6.23...v2.6.24) (2026-03-26)
 
 
