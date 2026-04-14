@@ -68,7 +68,7 @@
     "typescript": "5.9.3"
   },
   "engines": {
-    "node": ">=12"
+    "node": ">=18"
   },
   "contributors": [
     {
