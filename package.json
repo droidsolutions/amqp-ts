@@ -33,7 +33,7 @@
     "test-integration": "gulp test:integration"
   },
   "dependencies": {
-    "amqplib": "^0.10.9"
+    "amqplib": "^1.0.3"
   },
   "devDependencies": {
     "@commitlint/cli": "20.5.0",
@@ -68,7 +68,7 @@
     "typescript": "5.9.3"
   },
   "engines": {
-    "node": ">=12"
+    "node": ">=18"
   },
   "contributors": [
     {
