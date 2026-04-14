@@ -1,9 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/explicit-module-boundary-types */
 import * as AmqpLib from "amqplib/callback_api";
-import { AmqpProperties } from "..";
+import type { AmqpProperties } from "../AmqpProperties";
 import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
 import { Binding } from "../Binding";
 import { Connection } from "../Connection/Connection";
