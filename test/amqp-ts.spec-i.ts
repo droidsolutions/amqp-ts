@@ -30,7 +30,7 @@ const logger = pino({
   name: "amqp-ts integration-test",
   level: LogLevel,
   formatters: {
-    level: (label, _number) => {
+    level: (label: string, _number: number) => {
       return { level: label };
     },
   },
@@ -53,14 +53,14 @@ function restartAmqpServer() {
         { err },
         "Unable to shutdown and restart RabbitMQ, possible solution: use elevated permissions (start an admin shell)",
       );
-      throw new Error(`Unable to restart rabbitmq, error:\\n${(err as Error).message}`);
+      throw new Error(`Unable to restart rabbitmq, error:\\n${(err as Error).message}`, { cause: err });
     }
   } else {
     try {
       execSync("./tools/restart-rabbit.sh");
     } catch (err) {
       logger.error({ err }, "Unable to shutdown and restart RabbitMQ");
-      throw new Error("Unable to restart rabbitmq, error:\n" + (err as Error).message);
+      throw new Error("Unable to restart rabbitmq, error:\n" + (err as Error).message, { cause: err });
     }
   }
 }
@@ -68,7 +68,7 @@ function restartAmqpServer() {
 /* istanbul ignore next */
 describe("AMQP Connection class automatic reconnection", function () {
   // cleanup function for the AMQP connection, also tests the Connection.deleteConfiguration method
-  function cleanup(connection: Connection, done, error?) {
+  function cleanup(connection: Connection, done: (err?: unknown) => void, error?: Error) {
     connection
       .deleteConfiguration()
       .then(() => {
@@ -99,7 +99,7 @@ describe("AMQP Connection class automatic reconnection", function () {
             expect(message.getContent()).equals("Test");
             cleanup(connection, done);
           } catch (err) {
-            cleanup(connection, done, err);
+            cleanup(connection, done, err as Error);
           }
         },
         { noAck: true },
@@ -135,7 +135,7 @@ describe("AMQP Connection class automatic reconnection", function () {
             expect(message.getContent()).equals("Test");
             cleanup(connection, done);
           } catch (err) {
-            cleanup(connection, done, err);
+            cleanup(connection, done, err as Error);
           }
         },
         { noAck: true },

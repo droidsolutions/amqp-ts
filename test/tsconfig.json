@@ -5,7 +5,8 @@
     "outDir": "__test",
     "module": "commonjs",
     "incremental": true,
-    "noUnusedLocals": false
+    "noUnusedLocals": false,
+    "types": ["mocha"]
   },
   "exclude": ["__test"]
 }
