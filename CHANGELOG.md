@@ -1,3 +1,24 @@
+# [3.0.0](https://github.com/droidsolutions/amqp-ts/compare/v2.6.25...v3.0.0) (2026-04-14)
+
+
+### Bug Fixes
+
+* **deps:** bump amqplib from 0.10.9 to 1.0.3 ([fccfdde](https://github.com/droidsolutions/amqp-ts/commit/fccfdde8cd394cc9b6bb6983e74477c53ccb7f8e))
+
+
+### chore
+
+* update minimum Node version to 18 ([84de626](https://github.com/droidsolutions/amqp-ts/commit/84de62624f06579aa5359fb7f594503d082540e4))
+
+
+### BREAKING CHANGES
+
+* Raise minimum supported Node version to 18
+Following the major release of amqplib
+See https://github.com/amqp-node/amqplib/blob/main/CHANGELOG.md for amqplib changelog
+
+Signed-off-by: Stefan Ißmer <stefan.issmer@droidsolutions.de>
+
 ## [2.6.25](https://github.com/droidsolutions/amqp-ts/compare/v2.6.24...v2.6.25) (2026-04-07)
 
 
