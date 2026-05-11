@@ -111,7 +111,6 @@ export class Exchange {
     message.sendTo(this, routingKey);
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
   public rpc(requestParameters: any, routingKey = "", callback?: (err, message: Message) => void): Promise<Message> {
     return new Promise<Message>((resolve, reject) => {
       function generateUuid(): string {

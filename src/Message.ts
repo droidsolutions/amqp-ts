@@ -28,7 +28,6 @@ export class Message {
    * @param content The message content.
    * @param options The message options.
    */
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
   constructor(content?: any, options: AmqpProperties = {}) {
     this.properties = options;
     if (content !== undefined) {

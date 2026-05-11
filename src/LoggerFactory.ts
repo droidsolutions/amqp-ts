@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-empty-function */
 /**
  * A function that retrieves an instance of a logger.
  */
