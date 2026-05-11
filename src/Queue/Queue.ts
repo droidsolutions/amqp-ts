@@ -82,7 +82,7 @@ export class Queue {
               if (this.options.noCreate) {
                 this._channel.checkQueue(this._name, callback);
               } else {
-                this._channel.assertQueue(this._name, this.options as AmqpLib.Options.AssertQueue, callback);
+                this._channel.assertQueue(this._name, this.options, callback);
               }
             }
           });
