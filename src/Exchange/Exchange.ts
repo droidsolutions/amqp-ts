@@ -87,7 +87,7 @@ export class Exchange {
                 this._channel.assertExchange(
                   this._name,
                   this._type,
-                  this.options as AmqpLib.Options.AssertExchange,
+                  this.options,
                   callback,
                 );
               }
