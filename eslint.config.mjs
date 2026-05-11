@@ -5,6 +5,7 @@ import tsParser from "@typescript-eslint/parser";
 import typescriptEslint from "@typescript-eslint/eslint-plugin";
 import mocha from "eslint-plugin-mocha";
 import eslintjs from "@eslint/js";
+import n from "eslint-plugin-n";
 
 import { FlatCompat } from "@eslint/eslintrc";
 
@@ -18,6 +19,7 @@ export default defineConfig([
   {
     ignores: ["eslint.config.mjs"],
   },
+  n.configs["flat/recommended-module"],
   {
     languageOptions: {
       globals: {
@@ -44,7 +46,6 @@ export default defineConfig([
       "plugin:@typescript-eslint/recommended",
       "plugin:@typescript-eslint/recommended-requiring-type-checking",
       "prettier",
-      "plugin:n/recommended-module",
     ),
 
     settings: {
