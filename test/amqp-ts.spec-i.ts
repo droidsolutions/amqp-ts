@@ -1,8 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable no-console */
-/* eslint-disable @typescript-eslint/no-var-requires */
 /**
  * Integration tests for AmqpSimple
  * Created by Ab on 2015-10-21.
