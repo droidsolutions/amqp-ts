@@ -1,3 +1,10 @@
+## [3.0.4](https://github.com/droidsolutions/amqp-ts/compare/v3.0.3...v3.0.4) (2026-06-23)
+
+
+### Bug Fixes
+
+* **deps:** bump tar and npm ([2720ea1](https://github.com/droidsolutions/amqp-ts/commit/2720ea1d30bf957be2b81ca9a2e889051cdc799b))
+
 ## [3.0.3](https://github.com/droidsolutions/amqp-ts/compare/v3.0.2...v3.0.3) (2026-06-23)
 
 
