@@ -45,8 +45,6 @@
 Following the major release of amqplib
 See https://github.com/amqp-node/amqplib/blob/main/CHANGELOG.md for amqplib changelog
 
-Signed-off-by: Stefan Ißmer <stefan.issmer@droidsolutions.de>
-
 ## [2.6.25](https://github.com/droidsolutions/amqp-ts/compare/v2.6.24...v2.6.25) (2026-04-07)
 
 
