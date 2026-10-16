@@ -30,7 +30,8 @@
     "prepare": "husky install",
     "test": "mocha test/*.spec.ts",
     "test:coverage": "nyc mocha test/*.spec.ts",
-    "test-integration": "gulp test:integration"
+    "test-integration": "gulp test:integration",
+    "test:release-config": "node --test test/release-config.test.mjs"
   },
   "dependencies": {
     "amqplib": "^1.0.3"
@@ -51,6 +52,7 @@
     "@typescript-eslint/parser": "8.67.0",
     "chai": "4.3.10",
     "chai-as-promised": "7.1.2",
+    "conventional-changelog-angular": "8.2.0",
     "eslint": "10.8.1",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-mocha": "12.0.2",
@@ -82,24 +84,6 @@
   "commitlint": {
     "extends": [
       "@commitlint/config-conventional"
-    ]
-  },
-  "release": {
-    "branches": [
-      "main",
-      "master",
-      {
-        "name": "develop",
-        "prerelease": true
-      }
-    ],
-    "plugins": [
-      "@semantic-release/commit-analyzer",
-      "@semantic-release/release-notes-generator",
-      "@semantic-release/changelog",
-      "@semantic-release/npm",
-      "@semantic-release/github",
-      "@semantic-release/git"
     ]
   },
   "mocha": {

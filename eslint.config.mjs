@@ -17,7 +17,7 @@ const compat = new FlatCompat({
 
 export default defineConfig([
   {
-    ignores: ["eslint.config.mjs"],
+    ignores: ["eslint.config.mjs", "release.config.mjs", "test/release-config.test.mjs"],
   },
   n.configs["flat/recommended-module"],
   {

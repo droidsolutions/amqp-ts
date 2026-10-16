@@ -18,6 +18,7 @@ jobs:
          node-version: 24
      - run: npm ci --ignore-scripts
      - run: npm run lint
+     - run: npm run test:release-config
 
   build:
     runs-on: ubuntu-latest
