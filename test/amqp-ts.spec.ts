@@ -8,9 +8,10 @@ import { expect, use } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { once } from "node:events";
 import { pino } from "pino";
+import type { Binding } from "../src/Binding.js";
 import { Connection } from "../src/Connection/Connection.js";
 import { Topology } from "../src/Connection/Topology.js";
-import { LoggerFactory } from "../src/LoggerFactory.js";
+import { LoggerFactory, SimpleLogger } from "../src/LoggerFactory.js";
 import { Message } from "../src/Message.js";
 import { Queue } from "../src/Queue/Queue.js";
 import { killConnections, uniqueConnectionName, waitForConsumerTags } from "./helpers/broker.js";
@@ -25,6 +26,7 @@ const ReconnectTimeout = Number(process.env.AMQPTEST_RECONNECT_TIMEOUT || 20000)
 const LogLevel = process.env.AMQPTEST_LOGLEVEL || "silent";
 const testExchangeNamePrefix = process.env.AMQPTEST_EXCHANGE_PREFIX || "TestExchange_";
 const testQueueNamePrefix = process.env.AMQPTEST_QUEUE_PREFIX || "TestQueue_";
+const CleanupTimeout = 5000;
 
 /* istanbul ignore next */
 describe("Test amqp-ts module", function () {
@@ -59,21 +61,24 @@ describe("Test amqp-ts module", function () {
     return conn;
   }
 
-  // cleanup function for the AMQP connection, also tests the Connection.deleteConfiguration method
-  function cleanup(connection: Connection, done: Mocha.Done, error?: Error) {
-    connection
-      .deleteConfiguration()
-      .then(() => {
-        return connection.close();
-      })
-      .then(
-        () => {
-          done(error);
-        },
-        (err) => {
-          done(err);
-        },
-      );
+  /** Rejects after `ms`, so a step that hangs cannot keep mocha alive. The timer does not keep the process alive. */
+  function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`${what} did not settle within ${ms} ms`)), ms).unref();
+      }),
+    ]);
+  }
+
+  // cleanup function for the AMQP connection, also tests the Connection.deleteConfiguration method. The connection is
+  // closed even when deleting the topology fails or hangs, so a failing test cannot keep mocha alive.
+  async function cleanup(connection: Connection): Promise<void> {
+    try {
+      await within(connection.deleteConfiguration(), CleanupTimeout, "deleteConfiguration");
+    } finally {
+      await within(connection.close(), CleanupTimeout, "close");
+    }
   }
 
   let currentConnection: Connection;
@@ -109,25 +114,21 @@ describe("Test amqp-ts module", function () {
     currentConnection = getAmqpConnection();
   });
 
-  afterEach(function () {
-    cleanup(currentConnection, () => {});
+  afterEach(async function () {
+    this.timeout(3 * CleanupTimeout);
+    // a test may leave its topology in a state that cannot be deleted any more, which must not fail the next test
+    await cleanup(currentConnection).catch(() => {});
   });
 
   // cleanup failed tests
   // unfortunately does still not execute after encountering an error in mocha, perhaps in future versions
-  after(function (done) {
-    const processAll: Promise<any>[] = [];
+  after(async function () {
+    this.timeout(3 * CleanupTimeout);
     console.log("cleanup phase!");
-    for (let i = 0, l = connections.length; i < l; i++) {
-      processAll.push(connections[i].deleteConfiguration());
-    }
-    Promise.all(processAll)
-      .then(() => {
-        done();
-      })
-      .catch((err) => {
-        done(err);
-      });
+    // the connections are closed by now, so this only removes what is left and must not fail the run
+    await Promise.allSettled(
+      connections.map((connection) => within(connection.deleteConfiguration(), CleanupTimeout, "deleteConfiguration")),
+    );
   });
 
   describe("AMQP Connection class initialization", function () {
@@ -994,6 +995,58 @@ describe("Test amqp-ts module", function () {
       }
     }
 
+    /** Creates an exchange or a queue behind the library's back, so it can be declared with `noCreate`. */
+    async function createOnBroker(kind: "exchange" | "queue", name: string) {
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const rawChannel = await raw.createChannel();
+        if (kind === "exchange") {
+          await rawChannel.assertExchange(name, "fanout");
+        } else {
+          await rawChannel.assertQueue(name);
+        }
+      } finally {
+        await raw.close();
+      }
+    }
+
+    /** A logger factory whose loggers record level and message template of every entry. */
+    function recordingLoggerFactory() {
+      const entries: { level: string; msg: string }[] = [];
+      const record =
+        (level: string) =>
+        (objOrMsg: Record<string, unknown> | string, msg?: string): void => {
+          entries.push({ level, msg: typeof objOrMsg === "string" ? objOrMsg : (msg ?? "") });
+        };
+      const logger: SimpleLogger = {
+        trace: record("trace"),
+        debug: record("debug"),
+        info: record("info"),
+        warn: record("warn"),
+        error: record("error"),
+        fatal: record("fatal"),
+      };
+      const factory: LoggerFactory = () => logger;
+
+      return { factory, entries };
+    }
+
+    /** Collects unhandled rejections until the returned function is called, which removes the listener again. */
+    function collectUnhandledRejections() {
+      const reasons: unknown[] = [];
+      const listener = (reason: unknown): void => {
+        reasons.push(reason);
+      };
+      process.on("unhandledRejection", listener);
+
+      return {
+        reasons,
+        stop: () => {
+          process.off("unhandledRejection", listener);
+        },
+      };
+    }
+
     it("consumer resumes after the broker kills the connection", async function () {
       const queue = currentConnection.declareQueue(nextQueueName());
       const { consumer, waitFor } = nextMessage(queue);
@@ -1254,6 +1307,223 @@ describe("Test amqp-ts module", function () {
         expect(queue.initialized, "no second re-initialization").to.equal(recovered);
       } finally {
         await raw.close();
+      }
+    });
+
+    it("isolates a failing entity during setup", async function () {
+      const failingName = nextQueueName();
+      await createOnBroker("queue", failingName);
+      const failing = currentConnection.declareQueue(failingName, { noCreate: true });
+      const healthy = currentConnection.declareQueue(nextQueueName());
+      const { consumer, waitFor } = nextMessage(healthy);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      const errors: Error[] = [];
+      currentConnection.on("error_connection", (err: Error) => errors.push(err));
+      let lost = 0;
+      currentConnection.on("lost_connection", () => lost++);
+      await deleteOnBroker("queue", failingName);
+      const reestablished = once(currentConnection, "re_established_connection");
+      expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      await reestablished;
+
+      expect(errors, "one error_connection for the failing queue").to.have.length(1);
+      expect(errors[0].message).to.contain("404");
+      await expect(failing.initialized).to.be.rejectedWith("NOT-FOUND");
+
+      healthy.send(new Message("after-setup-failure"));
+      await waitFor("after-setup-failure");
+
+      // a setup that threw for the failing queue would reconnect again and again
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      expect(lost, "no reconnect loop").to.equal(1);
+    });
+
+    it("drops buffered sends when recovery gives up", async function () {
+      const { factory, entries } = recordingLoggerFactory();
+      const connection = new Connection("amqp://localhost:1", {}, { maxRetries: 1, initialDelay: 10 }, factory);
+      try {
+        const queue = connection.declareQueue(nextQueueName());
+        const failed = once(connection, "error_connection");
+        expect(() => queue.send(new Message("x"))).to.not.throw();
+        await failed;
+
+        // the send is dropped once the queue's initialized rejects, give it a moment
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const dropped = entries.filter((entry) => entry.level === "warn" && entry.msg.startsWith("Dropping message"));
+        expect(dropped, "one warn entry for the dropped message").to.have.length(1);
+      } finally {
+        await connection.close();
+      }
+    });
+
+    it("close during a scheduled reconnect stops recovery", async function () {
+      const connection = new Connection("amqp://localhost:1", {}, {}, loggerFactory);
+      let closed = 0;
+      connection.on("close_connection", () => closed++);
+      await once(connection, "trying_connect");
+
+      let trying = 0;
+      connection.on("trying_connect", () => trying++);
+      await connection.close();
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      expect(closed, "a single close_connection").to.equal(1);
+      expect(trying, "no further trying_connect").to.equal(0);
+    });
+
+    it("does not crash on unhandled rejections when recovery gives up", async function () {
+      const unhandled = collectUnhandledRejections();
+      const connection = new Connection("amqp://localhost:1", {}, { maxRetries: 1, initialDelay: 10 }, loggerFactory);
+      try {
+        // nobody awaits any of these
+        const exchange = connection.declareExchange(nextExchangeName(), "fanout");
+        const queue = connection.declareQueue(nextQueueName());
+        void queue.bind(exchange);
+        void queue.activateConsumer(() => {});
+        queue.prefetch(1);
+        queue.send(new Message("to the queue"));
+        exchange.send(new Message("to the exchange"));
+        // an rpc's own promise is the caller's to handle, its internal chain is not
+        queue.rpc("queue rpc").catch(() => {});
+        exchange.rpc("exchange rpc").catch(() => {});
+        const pending: Promise<unknown>[] = [
+          connection.initialized,
+          exchange.initialized,
+          queue.initialized,
+          queue._consumerInitialized,
+          ...Object.values(connection._bindings).map((binding) => binding.initialized),
+        ];
+
+        const [failure] = (await once(connection, "error_connection")) as [Error];
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(unhandled.reasons).to.eql([]);
+        expect(pending).to.have.length(5);
+        for (const promise of pending) {
+          await expect(within(promise, 1000, "a pending initialized")).to.be.rejectedWith(failure);
+        }
+      } finally {
+        unhandled.stop();
+        await connection.close();
+      }
+    });
+
+    it("rejects every pending initialized when closed during an outage", async function () {
+      const exchangeName = nextExchangeName();
+      const queueName = nextQueueName();
+      const exchange = currentConnection.declareExchange(exchangeName, "fanout");
+      const queue = currentConnection.declareQueue(queueName);
+      try {
+        const binding = await queue.bind(exchange);
+        const { consumer } = nextMessage(queue);
+        await consumer;
+        await currentConnection.completeConfiguration();
+
+        const lost = once(currentConnection, "lost_connection");
+        expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+        await lost;
+        const pending: Promise<unknown>[] = [
+          currentConnection.initialized,
+          exchange.initialized,
+          queue.initialized,
+          queue._consumerInitialized,
+          binding.initialized,
+        ];
+        await currentConnection.close();
+
+        for (const promise of pending) {
+          await expect(within(promise, 1000, "a pending initialized")).to.be.rejectedWith("Connection closed");
+        }
+      } finally {
+        // the closed connection cannot delete its topology any more
+        await deleteOnBroker("exchange", exchangeName);
+        await deleteOnBroker("queue", queueName);
+      }
+    });
+
+    it("rejects a pending binding when its other end fails for good", async function () {
+      const exchangeName = nextExchangeName();
+      await createOnBroker("exchange", exchangeName);
+      const exchange = currentConnection.declareExchange(exchangeName, "fanout", { noCreate: true });
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+      const binding = await queue.bind(exchange);
+      const { consumer } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+      const errors: Error[] = [];
+      currentConnection.on("error_connection", (err: Error) => errors.push(err));
+
+      // the queue re-initializes after the consumer cancel, but cannot re-bind: the exchange is gone as well
+      await deleteOnBroker("exchange", exchangeName);
+      const firstQueue = queue.initialized;
+      await deleteOnBroker("queue", queueName);
+      await replaced(() => queue.initialized, firstQueue);
+      const pendingBinding = binding.initialized;
+
+      // the 404 makes the noCreate exchange re-initialize, which fails for good
+      const firstExchange = exchange.initialized;
+      exchange.send(new Message("into the void"));
+      await expect(replaced(() => exchange.initialized, firstExchange)).to.be.rejectedWith("NOT-FOUND");
+
+      await expect(within(pendingBinding, 2000, "the binding")).to.be.rejectedWith("NOT-FOUND");
+      expect(Object.keys(currentConnection._bindings), "the binding is no longer declared").to.eql([]);
+      await within(currentConnection.completeConfiguration(), 2000, "completeConfiguration");
+      expect(errors, "one error_connection for the exchange").to.have.length(1);
+    });
+
+    it("settles a binding that is replaced while it is created again", async function () {
+      const exchange = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+      const binding = await queue.bind(exchange);
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      // bind the same pair again while the queue's re-initialization re-creates the binding
+      const rebind = binding._rebind.bind(binding) as (model: AmqpLib.ChannelModel) => Promise<void>;
+      let replacement: Promise<Binding> | undefined;
+      let rebinding: Promise<Binding> | undefined;
+      binding._rebind = (model: AmqpLib.ChannelModel): Promise<void> => {
+        const running = rebind(model);
+        rebinding = binding.initialized;
+        replacement = queue.bind(exchange);
+        return running;
+      };
+      const first = queue.initialized;
+      await deleteOnBroker("queue", queueName);
+      await replaced(() => queue.initialized, first);
+
+      expect(rebinding, "the binding was re-created").to.not.equal(undefined);
+      await within(rebinding, 2000, "the replaced binding");
+      expect(await replacement).to.not.equal(binding);
+      exchange.send(new Message("after-replace"));
+      await waitFor("after-replace");
+    });
+
+    it("keeps recovering when a connection event listener throws", async function () {
+      await currentConnection.completeConfiguration();
+      const unhandled = collectUnhandledRejections();
+      try {
+        const reestablished = once(currentConnection, "re_established_connection");
+        const thrower = (): never => {
+          throw new Error("listener failure");
+        };
+        currentConnection.on("lost_connection", thrower);
+        currentConnection.on("trying_connect", thrower);
+        currentConnection.on("re_established_connection", thrower);
+        expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+
+        await within(reestablished, 10_000, "re_established_connection");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(unhandled.reasons).to.eql([]);
+      } finally {
+        unhandled.stop();
+        currentConnection.removeAllListeners("lost_connection");
+        currentConnection.removeAllListeners("trying_connect");
+        currentConnection.removeAllListeners("re_established_connection");
       }
     });
   });

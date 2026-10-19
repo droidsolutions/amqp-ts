@@ -1,5 +1,5 @@
 import type { Channel, ChannelModel } from "amqplib";
-import { Deferred } from "./Deferred.js";
+import type { Deferred } from "./Deferred.js";
 import { Exchange } from "./Exchange/Exchange.js";
 import { SimpleLogger } from "./LoggerFactory.js";
 import { Queue } from "./Queue/Queue.js";
@@ -33,7 +33,8 @@ export class Binding {
 
   /**
    * A promise that resolves once the binding is created. It is replaced by a pending promise while the binding is
-   * created again after a lost connection.
+   * created again after a lost connection. It rejects when the binding or one of its ends fails on its own, or when
+   * the connection is closed or recovery gives up while it is pending.
    */
   public initialized: Promise<Binding>;
   public _source: Exchange;
@@ -50,9 +51,9 @@ export class Binding {
     this.log = destination.connection.loggerFactory(this.constructor);
     this._source = source;
     this._destination = destination;
-    this._deferred = new Deferred<Binding>();
-    this.initialized = this._deferred.promise;
     const connection = this._destination.connection;
+    this._deferred = connection._createDeferred<Binding>();
+    this.initialized = this._deferred.promise;
     connection._bindings[Binding.id(this._destination, this._source, this.pattern)] = this;
     // while disconnected the next connect initializes it
     if (connection._model) {
@@ -96,6 +97,9 @@ export class Binding {
    * removed together with the queue), so the binding stays declared and {@link initialized} stays pending until the
    * other end re-initializes, which re-binds, or the next connect does. It also does not supersede a running
    * {@link _initialize}, which may still be waiting for a freshly declared end.
+   *
+   * A binding that was deleted or replaced by binding the same pair again meanwhile is settled right away, since
+   * nothing would create it again.
    * @internal
    */
   public async _rebind(model: ChannelModel): Promise<void> {
@@ -114,10 +118,16 @@ export class Binding {
       } else {
         await channel.bindExchange(destination.name, source.name, this.pattern, this.args);
       }
-      if (!connection._isModelClosed(model) && connection._bindings[this.id] === this) {
+      if (!connection._isModelClosed(model)) {
         this._deferred.resolve(this);
+      } else if (!this._isDeclared) {
+        this._deferred.reject(new Error("Connection closed while the binding was created"));
       }
     } catch (err) {
+      if (!this._isDeclared) {
+        this._deferred.reject(err as Error);
+        return;
+      }
       if (connection._isModelClosed(model)) {
         // the next connect initializes it again, until then initialized stays pending
         return;
@@ -137,14 +147,30 @@ export class Binding {
     return Binding.id(this._destination, this._source, this.pattern);
   }
 
+  /** Whether this binding is still declared, i.e. neither deleted, replaced nor removed together with a failed end. */
+  private get _isDeclared(): boolean {
+    return this._destination.connection._bindings[this.id] === this;
+  }
+
   /**
    * Replaces a settled {@link initialized} with a pending one, until the binding is created again.
    * @internal
    */
   public _invalidate(): void {
     if (this._deferred.settled) {
-      this._deferred = new Deferred<Binding>();
+      this._deferred = this._destination.connection._createDeferred<Binding>();
       this.initialized = this._deferred.promise;
+    }
+  }
+
+  /**
+   * Rejects {@link initialized} if it is still pending. Used when the connection is closed, recovery gave up or an end
+   * of the binding failed.
+   * @internal
+   */
+  public _rejectPending(err: Error): void {
+    if (!this._deferred.settled) {
+      this._deferred.reject(err);
     }
   }
 
@@ -173,6 +199,11 @@ export class Binding {
       if (attempt !== this._attempt) {
         return;
       }
+      if (!this._isDeclared) {
+        // deleted, replaced or removed together with a failed end: nothing creates it again
+        this._rejectPending(err as Error);
+        throw err;
+      }
       if (destination.connection._isModelClosed(model)) {
         // the next connect initializes it again, until then initialized stays pending
         this.log.debug({ err }, "Connection lost while binding %s->%s.", source.name, destination.name);
@@ -187,6 +218,7 @@ export class Binding {
       );
       delete destination.connection._bindings[Binding.id(destination, source, this.pattern)];
       this._deferred.reject(err as Error);
+      destination.connection._onEntityFailed(this, err as Error, model, false);
       throw err;
     }
   }

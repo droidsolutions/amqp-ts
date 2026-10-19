@@ -5,7 +5,7 @@ import type { AmqpProperties } from "../AmqpProperties.js";
 import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts.js";
 import { Binding } from "../Binding.js";
 import { Connection } from "../Connection/Connection.js";
-import { Deferred } from "../Deferred.js";
+import type { Deferred } from "../Deferred.js";
 import { Exchange } from "../Exchange/Exchange.js";
 import { SimpleLogger } from "../LoggerFactory.js";
 import { Message } from "../Message.js";
@@ -21,7 +21,8 @@ export class Queue {
 
   /**
    * A promise that resolves once the connection is initialized and the queue is declared on its channel. It is
-   * replaced by a pending promise while the queue is re-initialized after a lost connection or a closed channel.
+   * replaced by a pending promise while the queue is re-initialized after a lost connection or a closed channel. It
+   * rejects when the queue fails on its own, or when the connection is closed or recovery gives up while it is pending.
    */
   public initialized: Promise<InitializeResult>;
   /** The AMQP channel. */
@@ -56,6 +57,8 @@ export class Queue {
    * {@link Queue.CancelLoopWindowMs} of that does not re-initialize again, which stops a cancel loop.
    */
   private _cancelRecoveredAt: number | undefined;
+  /** Why the queue failed on its own, after which it is no longer declared. */
+  private _failure: Error | undefined;
   /** Counts deliveries; bound once so it can be removed again. */
   private readonly _onDelivery = (): void => {
     this.connection._increaseCounter("receivedMessages");
@@ -80,7 +83,7 @@ export class Queue {
     this.log = this.connection.loggerFactory(this.constructor, { queue: name });
 
     this._name = name;
-    this._deferred = new Deferred<InitializeResult>();
+    this._deferred = this.connection._createDeferred<InitializeResult>();
     this.initialized = this._deferred.promise;
     this.connection._queues[this._name] = this;
     // while disconnected the next connect initializes it
@@ -98,7 +101,7 @@ export class Queue {
   public _initialize(model: ChannelModel, generation: number): Promise<void> {
     if (this.connection._queues[this._name] !== this) {
       // failed, closed or deleted: only a new declaration brings it back
-      return Promise.reject(new Error(`Queue '${this._name}' is no longer declared`));
+      return Promise.reject(this._failure ?? new Error(`Queue '${this._name}' is no longer declared`));
     }
     if (this._generation !== generation) {
       this._generation = generation;
@@ -115,12 +118,26 @@ export class Queue {
   public _invalidate(): void {
     this._readyChannel = undefined;
     if (this._deferred.settled) {
-      this._deferred = new Deferred<InitializeResult>();
+      this._deferred = this.connection._createDeferred<InitializeResult>();
       this.initialized = this._deferred.promise;
     }
     if (this._consumerDeferred?.settled) {
-      this._consumerDeferred = new Deferred<StartConsumerResult>();
+      this._consumerDeferred = this.connection._createDeferred<StartConsumerResult>();
       this._consumerInitialized = this._consumerDeferred.promise;
+    }
+  }
+
+  /**
+   * Rejects {@link initialized} and the consumer promise if they are still pending. Used when the connection is closed
+   * or recovery gave up.
+   * @internal
+   */
+  public _rejectPending(err: Error): void {
+    if (!this._deferred.settled) {
+      this._deferred.reject(err);
+    }
+    if (this._consumerDeferred?.settled === false) {
+      this._consumerDeferred.reject(err);
     }
   }
 
@@ -198,7 +215,10 @@ export class Queue {
       }
       this.log.error({ err }, "Failed to create queue '%s'.", this._name);
       delete this.connection._queues[this._name];
-      this._deferred.reject(err as Error);
+      this._failure = err as Error;
+      // the consumer cannot be registered on a queue that failed
+      this._rejectPending(err as Error);
+      this.connection._onEntityFailed(this, err as Error, model, rebind);
       throw err;
     }
   }
@@ -291,7 +311,7 @@ export class Queue {
             },
           );
       };
-      this.initialized.then(processRpc);
+      this.initialized.then(processRpc, (err: Error) => reject(err));
     });
   }
 
@@ -341,7 +361,7 @@ export class Queue {
 
     this._consumerOptions = options;
     this._consumer = onMessage;
-    this._consumerDeferred = new Deferred<StartConsumerResult>();
+    this._consumerDeferred = this.connection._createDeferred<StartConsumerResult>();
     this._consumerInitialized = this._consumerDeferred.promise;
     // registers right away if the queue is ready, otherwise once it is; a reconnect registers it as well
     this.initialized.then(

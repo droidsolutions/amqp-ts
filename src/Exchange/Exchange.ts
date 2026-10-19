@@ -4,7 +4,7 @@ import * as os from "node:os";
 import { ApplicationName, DIRECT_REPLY_TO_QUEUE } from "../amqp-ts.js";
 import { Binding } from "../Binding.js";
 import { Connection } from "../Connection/Connection.js";
-import { Deferred } from "../Deferred.js";
+import type { Deferred } from "../Deferred.js";
 import { SimpleLogger } from "../LoggerFactory.js";
 import { Message } from "../Message.js";
 import { DeclarationOptions } from "./DeclarationOptions.js";
@@ -17,7 +17,8 @@ import { InitializeResult } from "./InitializeResult.js";
 export class Exchange {
   /**
    * A promise that resolves once the exchange is initialized. It is replaced by a pending promise while the exchange
-   * is re-initialized after a lost connection or a closed channel.
+   * is re-initialized after a lost connection or a closed channel. It rejects when the exchange fails on its own, or
+   * when the connection is closed or recovery gives up while it is pending.
    */
   public initialized: Promise<InitializeResult>;
   /** The underlying AMQP channel. */
@@ -46,6 +47,8 @@ export class Exchange {
   private _attempt = 0;
   /** The channel the exchange was successfully declared on. */
   private _readyChannel: Channel | undefined;
+  /** Why the exchange failed on its own, after which it is no longer declared. */
+  private _failure: Error | undefined;
 
   /**
    * Initializes a new instance of the @see Exchange class.
@@ -67,7 +70,7 @@ export class Exchange {
 
     this._name = name;
     this._type = type;
-    this._deferred = new Deferred<InitializeResult>();
+    this._deferred = this.connection._createDeferred<InitializeResult>();
     this.initialized = this._deferred.promise;
     this.connection._exchanges[this._name] = this;
     // while disconnected the next connect initializes it
@@ -84,7 +87,7 @@ export class Exchange {
   public _initialize(model: ChannelModel, generation: number): Promise<void> {
     if (this.connection._exchanges[this._name] !== this) {
       // failed, closed or deleted: only a new declaration brings it back
-      return Promise.reject(new Error(`Exchange '${this._name}' is no longer declared`));
+      return Promise.reject(this._failure ?? new Error(`Exchange '${this._name}' is no longer declared`));
     }
     if (this._generation !== generation) {
       this._generation = generation;
@@ -100,8 +103,18 @@ export class Exchange {
   public _invalidate(): void {
     this._readyChannel = undefined;
     if (this._deferred.settled) {
-      this._deferred = new Deferred<InitializeResult>();
+      this._deferred = this.connection._createDeferred<InitializeResult>();
       this.initialized = this._deferred.promise;
+    }
+  }
+
+  /**
+   * Rejects {@link initialized} if it is still pending. Used when the connection is closed or recovery gave up.
+   * @internal
+   */
+  public _rejectPending(err: Error): void {
+    if (!this._deferred.settled) {
+      this._deferred.reject(err);
     }
   }
 
@@ -159,7 +172,9 @@ export class Exchange {
       }
       this.log.error({ err }, "Failed to create exchange '%s'.", this._name);
       delete this.connection._exchanges[this._name];
+      this._failure = err as Error;
       this._deferred.reject(err as Error);
+      this.connection._onEntityFailed(this, err as Error, model, rebind);
       throw err;
     }
   }
@@ -248,7 +263,7 @@ export class Exchange {
         }
       };
 
-      this.initialized.then(processRpc);
+      this.initialized.then(processRpc, (err: Error) => reject(err));
     });
   }
 

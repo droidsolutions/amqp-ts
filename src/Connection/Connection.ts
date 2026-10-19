@@ -52,6 +52,8 @@ export class Connection extends EventEmitter {
   private _connectedBefore = false;
   private _isClosing = false;
   private _closing: Promise<void> | undefined;
+  /** Why recovery is over, set by {@link close} or when recovery gave up. Nothing is initialized after that. */
+  private _stopError: Error | undefined;
   private log: SimpleLogger;
   private _sentMessagesCounter = 0;
   private _receivedMessagesCounter = 0;
@@ -96,9 +98,50 @@ export class Connection extends EventEmitter {
   public close(): Promise<void> {
     if (this._closing === undefined) {
       this._isClosing = true;
+      // buffered sends and anyone awaiting initialized must not wait for a connection that never comes
+      this._stop(new Error("Connection closed"));
       this._closing = this._close();
     }
     return this._closing;
+  }
+
+  /**
+   * @internal A new deferred for an entity's promise. Once the connection was closed or recovery gave up nothing would
+   * ever settle it, so it is rejected right away.
+   */
+  public _createDeferred<T>(): Deferred<T> {
+    const deferred = new Deferred<T>();
+    if (this._stopError !== undefined) {
+      deferred.reject(this._stopError);
+    }
+    return deferred;
+  }
+
+  /**
+   * @internal An exchange, queue or binding failed on its own, not because the connection was lost: it is no longer
+   * declared and its {@link initialized} is rejected.
+   *
+   * The bindings of a failed exchange or queue can never be created any more, so they are rejected and removed as
+   * well. A failure while the entity was declared again, in the setup after a reconnect or after its channel closed,
+   * is also emitted as `error_connection`, because nobody awaits {@link initialized} then.
+   */
+  public _onEntityFailed(
+    entity: Exchange | Queue | Binding,
+    err: Error,
+    model: ChannelModel,
+    redeclared: boolean,
+  ): void {
+    if (!(entity instanceof Binding)) {
+      for (const [id, binding] of Object.entries(this._bindings)) {
+        if (binding._source === entity || binding._destination === entity) {
+          delete this._bindings[id];
+          binding._rejectPending(err);
+        }
+      }
+    }
+    if (redeclared || (this._connectedBefore && model === this._setupModel)) {
+      this._emitSafely("error_connection", err);
+    }
   }
 
   /** @internal Whether the given model has closed. */
@@ -121,11 +164,41 @@ export class Connection extends EventEmitter {
     }
     this._model = undefined;
     this.isConnected = false;
-    if (!this._deferred.settled) {
-      this._deferred.reject(new Error("Connection closed"));
-    }
     this.log.info("AMQP Connection closed.");
-    this.emit("close_connection");
+    this._emitSafely("close_connection");
+  }
+
+  /**
+   * Recovery is over, because of {@link close} or because it gave up: rejects every promise that is still pending,
+   * the connection's and the entities', since nothing settles them any more.
+   */
+  private _stop(err: Error): void {
+    this._stopError ??= err;
+    if (!this._deferred.settled) {
+      this._deferred.reject(err);
+    }
+    for (const exchange of Object.values(this._exchanges)) {
+      exchange._rejectPending(err);
+    }
+    for (const queue of Object.values(this._queues)) {
+      queue._rejectPending(err);
+    }
+    for (const binding of Object.values(this._bindings)) {
+      binding._rejectPending(err);
+    }
+  }
+
+  /**
+   * Emits an event to the user's listeners. Most events are emitted from within amqplib's recovery, where a throwing
+   * listener would stop the reconnect from being scheduled, or from a promise chain, where it would be an unhandled
+   * rejection. So a listener's error is logged instead.
+   */
+  private _emitSafely(event: string, ...args: unknown[]): void {
+    try {
+      this.emit(event, ...args);
+    } catch (err) {
+      this.log.error({ err }, "A listener for '%s' threw: %s", event, (err as Error).message);
+    }
   }
 
   private _listen(recovering: RecoveringChannelModel): void {
@@ -136,7 +209,7 @@ export class Connection extends EventEmitter {
     });
     recovering.on("reconnect-scheduled", ({ attempt, delay }: { attempt: number; delay: number }) => {
       this.log.warn("Connection retry %d in %d ms", attempt, delay);
-      this.emit("trying_connect");
+      this._emitSafely("trying_connect");
     });
     recovering.on("reconnect-failed", (err: Error) => this._giveUp(err));
     recovering.on("error", (err: Error) => {
@@ -199,17 +272,17 @@ export class Connection extends EventEmitter {
 
     // entities declared while setup was running were not part of it
     void this._initializeEntities(model, generation).then(() => {
-      if (this._model !== model) {
+      if (this._isClosing || this._model !== model) {
         return;
       }
       this._deferred.resolve();
       if (this._connectedBefore) {
         this.log.info("AMQP Connection re-established");
-        this.emit("re_established_connection");
+        this._emitSafely("re_established_connection");
       } else {
         this._connectedBefore = true;
         this.log.info("AQMP Connection established.");
-        this.emit("open_connection");
+        this._emitSafely("open_connection");
       }
     });
   }
@@ -229,7 +302,7 @@ export class Connection extends EventEmitter {
     this._invalidate();
     if (!this._isClosing) {
       this.log.warn({ err }, "Connection lost: %s", err.message);
-      this.emit("lost_connection");
+      this._emitSafely("lost_connection");
     }
   }
 
@@ -238,9 +311,9 @@ export class Connection extends EventEmitter {
     this._model = undefined;
     this.isConnected = false;
     this._invalidate();
-    this._deferred.reject(err);
+    this._stop(err);
     this.log.warn({ err }, "Connection failed, giving up: %s", err.message);
-    this.emit("error_connection", err);
+    this._emitSafely("error_connection", err);
   }
 
   /** Replaces a settled {@link initialized} with a pending one. */
