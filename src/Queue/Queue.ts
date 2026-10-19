@@ -101,6 +101,7 @@ export class Queue {
     this._deferred = this.connection._createDeferred<InitializeResult>();
     this.initialized = this._deferred.promise;
     this.connection._queues[this._name] = this;
+    this.connection._forgetFailure(this);
     // while disconnected the next connect initializes it
     if (this.connection._model) {
       this._initialize(this.connection._model, this.connection._generation).catch(() => {});
@@ -480,7 +481,11 @@ export class Queue {
           "again; it is registered again on the next reconnect.",
       );
       this.log.error({ err }, "%s", err.message);
-      // the consumer is gone until then, nobody would notice otherwise
+      // the consumer is gone until then, like a refused one, and nobody would notice otherwise
+      this._consumerRefusedIn = this._generation;
+      this._consumerDeferred = this.connection._createDeferred<StartConsumerResult>();
+      this._consumerDeferred.reject(err);
+      this._consumerInitialized = this._consumerDeferred.promise;
       this.connection._reportFailure(err);
       return;
     }

@@ -1328,6 +1328,9 @@ describe("Test amqp-ts module", function () {
         // the consumer is gone until then, which must not go unnoticed
         expect(errors, "one error_connection for the lost consumer").to.have.length(1);
         expect(errors[0].message).to.contain(queueName);
+        await expect(
+          within(currentConnection.completeConfiguration(), 2000, "completeConfiguration"),
+        ).to.be.rejectedWith(queueName);
       } finally {
         await raw.close();
       }
@@ -1495,7 +1498,10 @@ describe("Test amqp-ts module", function () {
 
       await expect(within(pendingBinding, 2000, "the binding")).to.be.rejectedWith("NOT-FOUND");
       expect(Object.keys(currentConnection._bindings), "the binding is no longer declared").to.eql([]);
-      await within(currentConnection.completeConfiguration(), 2000, "completeConfiguration");
+      // the failed exchange counts, instead of the binding keeping it pending forever
+      await expect(within(currentConnection.completeConfiguration(), 2000, "completeConfiguration")).to.be.rejectedWith(
+        "NOT-FOUND",
+      );
       expect(errors, "one error_connection for the exchange").to.have.length(1);
     });
 
@@ -1971,6 +1977,60 @@ describe("Test amqp-ts module", function () {
       expect(messages.filter((message) => message.includes(exchange.name))).to.have.length(1);
       expect(messages.filter((message) => message.includes(queue.name))).to.have.length(1);
       expect(messages.filter((message) => message.includes("x-match"))).to.have.length(1);
+    });
+
+    it("completeConfiguration rejects while a declared entity failed", async function () {
+      const failing = currentConnection.declareQueue(nextQueueName(), { noCreate: true });
+      const healthy = currentConnection.declareQueue(nextQueueName());
+      // the connection itself is fine
+      await currentConnection.initialized;
+
+      await expect(within(currentConnection.completeConfiguration(), 5000, "completeConfiguration")).to.be.rejectedWith(
+        "NOT-FOUND",
+      );
+      await expect(failing.initialized).to.be.rejectedWith("NOT-FOUND");
+      await healthy.initialized;
+      // also when it is asked after the failed queue was removed
+      await expect(within(currentConnection.completeConfiguration(), 2000, "completeConfiguration")).to.be.rejectedWith(
+        "NOT-FOUND",
+      );
+
+      // declaring it again, once it exists, replaces the failure
+      await createOnBroker("queue", failing.name);
+      currentConnection.declareQueue(failing.name, { noCreate: true });
+      await within(currentConnection.completeConfiguration(), 2000, "completeConfiguration");
+    });
+
+    it("completeConfiguration rejects once for a consumer refused at the first connect", async function () {
+      const queueName = nextQueueName();
+      // another connection holds an exclusive consumer, so the broker refuses ours with 403
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const channel = await raw.createChannel();
+        await channel.assertQueue(queueName);
+        await channel.consume(queueName, () => {}, { exclusive: true });
+
+        const errors: Error[] = [];
+        currentConnection.on("error_connection", (err: Error) => errors.push(err));
+        const queue = currentConnection.declareQueue(queueName);
+        const consumer = queue.activateConsumer(() => {});
+        await currentConnection.initialized;
+
+        await expect(within(consumer, 5000, "the consumer promise")).to.be.rejectedWith("403");
+        await expect(
+          within(currentConnection.completeConfiguration(), 2000, "completeConfiguration"),
+        ).to.be.rejectedWith("403");
+        // it is not registered again and again
+        await sleep(1500);
+        await expect(
+          within(currentConnection.completeConfiguration(), 2000, "completeConfiguration"),
+        ).to.be.rejectedWith("403");
+        expect(errors, "one error_connection for the consumer").to.have.length(1);
+        expect(errors[0].message).to.contain("403");
+      } finally {
+        await raw.close();
+        await deleteOnBroker("queue", queueName);
+      }
     });
   });
 });

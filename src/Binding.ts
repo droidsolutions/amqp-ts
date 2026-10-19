@@ -65,7 +65,8 @@ export class Binding {
     const connection = this._destination.connection;
     this._deferred = connection._createDeferred<Binding>();
     this.initialized = this._deferred.promise;
-    connection._bindings[Binding.id(this._destination, this._source, this.pattern)] = this;
+    connection._bindings[this._id] = this;
+    connection._forgetFailure(this);
     // while disconnected the next connect initializes it
     if (connection._model) {
       this._initialize(connection._model, connection._generation).catch(() => {});
@@ -149,13 +150,14 @@ export class Binding {
     }
   }
 
-  private get id(): string {
+  /** @internal */
+  public get _id(): string {
     return Binding.id(this._destination, this._source, this.pattern);
   }
 
   /** Whether this binding is still declared, i.e. neither deleted, replaced nor removed together with a failed end. */
   private get _isDeclared(): boolean {
-    return this._destination.connection._bindings[this.id] === this;
+    return this._destination.connection._bindings[this._id] === this;
   }
 
   /**
@@ -251,7 +253,7 @@ export class Binding {
         return;
       }
       if (this._deleting !== undefined) {
-        throw new Error(`Binding ${this.id} was deleted`);
+        throw new Error(`Binding ${this._id} was deleted`);
       }
       await this._create(model);
       if (attempt !== this._attempt) {
@@ -303,15 +305,15 @@ export class Binding {
     const destination = this._destination;
     const connection = destination.connection;
     if (this._isDeclared) {
-      delete connection._bindings[this.id];
+      delete connection._bindings[this._id];
     }
-    this._rejectPending(new Error(`Binding ${this.id} was deleted`));
+    this._rejectPending(new Error(`Binding ${this._id} was deleted`));
     await destination.initialized;
     // a creation that is still in flight would create it again after the unbind
     await this._creating;
     const model = connection._activeModel;
     if (model === undefined) {
-      throw new Error(`Connection lost while binding ${this.id} was deleted`);
+      throw new Error(`Connection lost while binding ${this._id} was deleted`);
     }
     await this._onOwnChannel(model, "Unbind", (channel) =>
       destination instanceof Queue

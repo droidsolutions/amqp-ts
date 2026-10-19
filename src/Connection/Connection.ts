@@ -15,9 +15,12 @@ import { Topology } from "./Topology.js";
 
 export class Connection extends EventEmitter {
   /**
-   * Resolves once the connection is established and the declared topology is initialized. It is replaced by a pending
+   * Resolves once the connection is established and the declared topology was set up. It is replaced by a pending
    * promise when the connection is lost and resolves again after the next successful reconnect. It rejects when
    * recovery gives up or the connection is closed before it was established.
+   *
+   * It only reflects the connection: an exchange, queue, binding or consumer that fails on its own does not keep it
+   * from resolving. Use {@link completeConfiguration} to wait for the topology.
    */
   public initialized: Promise<void>;
   public isConnected = false;
@@ -58,6 +61,8 @@ export class Connection extends EventEmitter {
   private _closing: Promise<void> | undefined;
   /** Why recovery is over, set by {@link close} or when recovery gave up. Nothing is initialized after that. */
   private _stopError: Error | undefined;
+  /** Why exchanges, queues and bindings failed on their own, until the same one is declared again. */
+  private _failures = new Map<string, Error>();
   private log: SimpleLogger;
   private _sentMessagesCounter = 0;
   private _receivedMessagesCounter = 0;
@@ -139,7 +144,24 @@ export class Connection extends EventEmitter {
         }
       }
     }
+    this._failures.set(Connection._failureKey(entity), err);
     this._reportFailure(err);
+  }
+
+  /**
+   * An exchange, queue or binding is declared (again): a failure of an earlier one with the same name no longer
+   * counts for {@link completeConfiguration}.
+   * @internal
+   */
+  public _forgetFailure(entity: Exchange | Queue | Binding): void {
+    this._failures.delete(Connection._failureKey(entity));
+  }
+
+  private static _failureKey(entity: Exchange | Queue | Binding): string {
+    if (entity instanceof Binding) {
+      return `binding ${entity._id}`;
+    }
+    return `${entity instanceof Queue ? "queue" : "exchange"} ${entity.name}`;
   }
 
   /**
@@ -361,13 +383,18 @@ export class Connection extends EventEmitter {
   }
 
   /**
-   * Make sure the whole defined connection topology is configured. Goes through each exchange, queue and binding and
-   * waits until all of them are initialized.
+   * Waits until the whole declared topology is initialized: every exchange, queue and binding, and the consumer of
+   * every queue with an activated consumer. Use it to gate the start of an application, since {@link initialized}
+   * only reflects the connection.
    *
-   * @return A promise that fulfills after all defined exchanges, queues and bindings are initialized.
+   * It rejects when one of them failed on its own, at the first connect or later. A failed exchange, queue or binding
+   * counts until one with the same name is declared again (or {@link deleteConfiguration} is called), a refused
+   * consumer until it is registered on the next reconnect. While the connection is down it waits for the reconnect.
+   *
+   * @return A promise that fulfills after all defined exchanges, queues, bindings and consumers are initialized.
    */
   public completeConfiguration(): Promise<any> {
-    const promises: Promise<any>[] = [];
+    const promises: Promise<any>[] = [...this._failures.values()].map((err) => Promise.reject(err));
     for (const exchangeId in this._exchanges) {
       const exchange: Exchange = this._exchanges[exchangeId];
       promises.push(exchange.initialized);
@@ -395,6 +422,8 @@ export class Connection extends EventEmitter {
    * with the first failure otherwise.
    */
   public async deleteConfiguration(): Promise<any> {
+    // what failed is not declared any more, so there is nothing to delete
+    this._failures.clear();
     const failures: unknown[] = [];
     const phase = async (deletions: Promise<unknown>[]): Promise<void> => {
       for (const result of await Promise.allSettled(deletions)) {

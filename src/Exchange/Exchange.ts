@@ -73,6 +73,7 @@ export class Exchange {
     this._deferred = this.connection._createDeferred<InitializeResult>();
     this.initialized = this._deferred.promise;
     this.connection._exchanges[this._name] = this;
+    this.connection._forgetFailure(this);
     // while disconnected the next connect initializes it
     if (this.connection._model) {
       this._initialize(this.connection._model, this.connection._generation).catch(() => {});
