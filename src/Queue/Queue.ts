@@ -16,6 +16,9 @@ import { StartConsumerResult } from "./StartConsumerResult.js";
 
 /** Represents an AQMP queue. */
 export class Queue {
+  /** A broker-side consumer cancel this soon after the consumer was registered again does not re-initialize. */
+  private static readonly CancelLoopWindowMs = 1000;
+
   /**
    * A promise that resolves once the connection is initialized and the queue is declared on its channel. It is
    * replaced by a pending promise while the queue is re-initialized after a lost connection or a closed channel.
@@ -46,6 +49,13 @@ export class Queue {
   /** The channel the consumer is registered on, or being registered on. */
   private _consumerChannel: Channel | undefined;
   private _consuming: Promise<void> = Promise.resolve();
+  /** The generation in which a broker-side consumer cancel made the queue re-initialize, until it re-consumed. */
+  private _cancelReinitGeneration: number | undefined;
+  /**
+   * When the current consumer was registered by a re-initialization after a broker-side cancel. Another cancel within
+   * {@link Queue.CancelLoopWindowMs} of that does not re-initialize again, which stops a cancel loop.
+   */
+  private _cancelRecoveredAt: number | undefined;
   /** Counts deliveries; bound once so it can be removed again. */
   private readonly _onDelivery = (): void => {
     this.connection._increaseCounter("receivedMessages");
@@ -129,7 +139,18 @@ export class Queue {
     return this._consuming;
   }
 
-  private async _declare(model: ChannelModel, attempt: number): Promise<void> {
+  /**
+   * Re-creates the channel after it closed while the connection stayed up, declares the queue again and restores its
+   * bindings, which a broker-side delete removes as well. Only then {@link initialized} resolves. The caller registers
+   * the consumer again.
+   */
+  private _reinitialize(model: ChannelModel, generation: number): Promise<void> {
+    this._generation = generation;
+    this._initializing = this._declare(model, ++this._attempt, true);
+    return this._initializing;
+  }
+
+  private async _declare(model: ChannelModel, attempt: number, rebind = false): Promise<void> {
     try {
       const channel = await model.createChannel();
       channel.on("error", (err: Error) => {
@@ -155,6 +176,15 @@ export class Queue {
       }
       this._readyChannel = channel;
       this._readyModel = model;
+      if (rebind) {
+        await Binding._rebindContaining(this, model);
+        if (attempt !== this._attempt) {
+          return;
+        }
+        if (this.connection._isModelClosed(model)) {
+          throw new Error("Connection closed while the bindings were restored");
+        }
+      }
       this._deferred.resolve(ok);
     } catch (err) {
       if (attempt !== this._attempt) {
@@ -179,6 +209,9 @@ export class Queue {
         return;
       }
       this._consumerTag = ok.consumerTag;
+      const recovered = this._cancelReinitGeneration !== undefined && this._cancelReinitGeneration === this._generation;
+      this._cancelRecoveredAt = recovered ? Date.now() : undefined;
+      this._cancelReinitGeneration = undefined;
       this._consumerDeferred.resolve(ok);
     } catch (err) {
       if (channel !== this._consumerChannel || this.connection._isModelClosed(model)) {
@@ -210,8 +243,7 @@ export class Queue {
         return;
       }
       this.log.warn("Channel of queue '%s' closed, re-initializing it.", this._name);
-      this._generation = undefined;
-      this._initialize(model, generation)
+      this._reinitialize(model, generation)
         .then(() => (consumeFailed ? undefined : this._initializeConsumer()))
         .catch(() => {});
     });
@@ -267,12 +299,17 @@ export class Queue {
    * @param count The maximum number of unacknowledged messages send to each listener of this queue.
    */
   prefetch(count: number): void {
-    this.initialized.then(() => {
-      this._channel.prefetch(count).catch((err: Error) => {
-        this.log.warn({ err }, "Setting the prefetch of queue '%s' failed.", this._name);
-      });
-      this.options.prefetch = count;
-    });
+    this.initialized.then(
+      () => {
+        this._channel.prefetch(count).catch((err: Error) => {
+          this.log.warn({ err }, "Setting the prefetch of queue '%s' failed.", this._name);
+        });
+        this.options.prefetch = count;
+      },
+      (err: Error) => {
+        this.log.warn({ err }, "Cannot set the prefetch of queue '%s', it failed to initialize.", this._name);
+      },
+    );
   }
 
   async recover(): Promise<void> {
@@ -315,7 +352,7 @@ export class Queue {
   private _createConsumerWrapper(channel: Channel): (msg: ConsumeMessage | null) => void {
     return (msg: ConsumeMessage | null): void => {
       if (msg === null) {
-        this.log.warn("The consumer of queue '%s' was cancelled by the broker.", this._name);
+        this._onConsumerCancelled(channel);
         return;
       }
       try {
@@ -360,6 +397,33 @@ export class Queue {
         );
       }
     };
+  }
+
+  /**
+   * The broker cancelled the consumer, for example because the queue was deleted. The channel stays open, so nothing
+   * else would notice: close it, which re-declares the queue, restores its bindings and registers the consumer again
+   * through the channel close handling. A `noCreate` queue that is gone then fails like any failed declaration.
+   */
+  private _onConsumerCancelled(channel: Channel): void {
+    if (
+      channel !== this._consumerChannel ||
+      channel !== this._readyChannel ||
+      this._closing !== undefined ||
+      this._deleting !== undefined
+    ) {
+      return;
+    }
+    if (this._cancelRecoveredAt !== undefined && Date.now() - this._cancelRecoveredAt < Queue.CancelLoopWindowMs) {
+      this.log.error(
+        "The consumer of queue '%s' was cancelled by the broker again right after it was registered again; it is " +
+          "registered again on the next reconnect.",
+        this._name,
+      );
+      return;
+    }
+    this.log.warn("The consumer of queue '%s' was cancelled by the broker, re-initializing the queue.", this._name);
+    this._cancelReinitGeneration = this._generation;
+    channel.close().catch(() => {});
   }
 
   /**

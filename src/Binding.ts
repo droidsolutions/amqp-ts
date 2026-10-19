@@ -1,4 +1,4 @@
-import type { ChannelModel } from "amqplib";
+import type { Channel, ChannelModel } from "amqplib";
 import { Deferred } from "./Deferred.js";
 import { Exchange } from "./Exchange/Exchange.js";
 import { SimpleLogger } from "./LoggerFactory.js";
@@ -72,6 +72,61 @@ export class Binding {
       this._initializing = this._bind(model, generation, ++this._attempt);
     }
     return this._initializing;
+  }
+
+  /**
+   * Creates every binding from or to the given entity again. Used after the entity's channel closed and the entity
+   * was declared again, because a broker-side delete of an exchange or queue removes its bindings as well. Never
+   * rejects, every binding handles its own failure.
+   * @internal
+   */
+  public static async _rebindContaining(connectionPoint: Exchange | Queue, model: ChannelModel): Promise<void> {
+    const bindings = Object.values(connectionPoint.connection._bindings).filter(
+      (binding) => binding._source === connectionPoint || binding._destination === connectionPoint,
+    );
+    await Promise.allSettled(bindings.map((binding) => binding._rebind(model)));
+  }
+
+  /**
+   * Creates the binding again on a short-lived channel of the given model, then settles {@link initialized}. Unlike
+   * {@link _initialize} it neither waits for source and destination nor uses the destination's channel: a failing
+   * bind closes the channel it runs on, and closing the destination's channel would re-initialize it again.
+   * @internal
+   */
+  public async _rebind(model: ChannelModel): Promise<void> {
+    const attempt = ++this._attempt;
+    const destination = this._destination;
+    const source = this._source;
+    this._invalidate();
+    let channel: Channel | undefined;
+    try {
+      channel = await model.createChannel();
+      channel.on("error", (err: Error) => {
+        this.log.warn({ err }, "Re-binding %s->%s failed: %s", source.name, destination.name, err.message);
+      });
+      if (destination instanceof Queue) {
+        await channel.bindQueue(destination.name, source.name, this.pattern, this.args);
+      } else {
+        await channel.bindExchange(destination.name, source.name, this.pattern, this.args);
+      }
+      if (attempt === this._attempt) {
+        this._deferred.resolve(this);
+      }
+    } catch (err) {
+      if (attempt !== this._attempt) {
+        return;
+      }
+      if (destination.connection._isModelClosed(model)) {
+        // the next connect initializes it again, until then initialized stays pending
+        throw err;
+      }
+      this.log.error({ err }, "Failed to re-create binding (%s->%s)", source.name, destination.name);
+      delete destination.connection._bindings[Binding.id(destination, source, this.pattern)];
+      this._deferred.reject(err as Error);
+      throw err;
+    } finally {
+      channel?.close().catch(() => {});
+    }
   }
 
   /**

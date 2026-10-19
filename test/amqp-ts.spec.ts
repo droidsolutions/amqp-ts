@@ -966,6 +966,34 @@ describe("Test amqp-ts module", function () {
       return { consumer, waitFor, received };
     }
 
+    /** Waits until `current()` no longer returns `previous`, i.e. the entity started re-initializing. */
+    async function replaced(current: () => Promise<unknown>, previous: Promise<unknown>, timeoutMs = 10_000) {
+      const deadline = Date.now() + timeoutMs;
+      while (current() === previous) {
+        if (Date.now() > deadline) {
+          throw new Error("the entity was never re-initialized");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      await current();
+    }
+
+    /** Deletes an exchange or a queue behind the library's back, through a separate connection. */
+    async function deleteOnBroker(kind: "exchange" | "queue", name: string) {
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const rawChannel = await raw.createChannel();
+        rawChannel.on("error", () => {});
+        if (kind === "exchange") {
+          await rawChannel.deleteExchange(name);
+        } else {
+          await rawChannel.deleteQueue(name);
+        }
+      } finally {
+        await raw.close();
+      }
+    }
+
     it("consumer resumes after the broker kills the connection", async function () {
       const queue = currentConnection.declareQueue(nextQueueName());
       const { consumer, waitFor } = nextMessage(queue);
@@ -1119,6 +1147,43 @@ describe("Test amqp-ts module", function () {
       } finally {
         await raw.close();
       }
+    });
+
+    it("restores the bindings of an exchange that is declared again after a broker-side delete", async function () {
+      const exchangeName = nextExchangeName();
+      const exchange = currentConnection.declareExchange(exchangeName, "fanout");
+      const queue = currentConnection.declareQueue(nextQueueName());
+      await queue.bind(exchange);
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      await deleteOnBroker("exchange", exchangeName);
+      // this one hits the 404 that closes the exchange's channel and is lost, as in 3.x
+      const first = exchange.initialized;
+      exchange.send(new Message("into the void"));
+      await replaced(() => exchange.initialized, first);
+
+      exchange.send(new Message("after-redeclare"));
+      await waitFor("after-redeclare");
+    });
+
+    it("consumer resumes after its queue is deleted on the broker", async function () {
+      const exchange = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+      await queue.bind(exchange);
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      // the broker cancels the consumer, which must re-declare the queue, its binding and the consumer
+      const first = queue.initialized;
+      await deleteOnBroker("queue", queueName);
+      await replaced(() => queue.initialized, first);
+
+      exchange.send(new Message("after-queue-delete"));
+      await waitFor("after-queue-delete");
     });
   });
 });

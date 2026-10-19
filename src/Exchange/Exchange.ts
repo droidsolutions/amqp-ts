@@ -105,7 +105,18 @@ export class Exchange {
     }
   }
 
-  private async _declare(model: ChannelModel, attempt: number): Promise<void> {
+  /**
+   * Re-creates the channel after it closed while the connection stayed up, declares the exchange again and restores
+   * its bindings, which a broker-side delete removes as well. Only then {@link initialized} resolves, so a message
+   * sent after that is routed again.
+   */
+  private _reinitialize(model: ChannelModel, generation: number): Promise<void> {
+    this._generation = generation;
+    this._initializing = this._declare(model, ++this._attempt, true);
+    return this._initializing;
+  }
+
+  private async _declare(model: ChannelModel, attempt: number, rebind = false): Promise<void> {
     try {
       const channel = await model.createChannel();
       channel.on("error", (err: Error) => {
@@ -126,6 +137,15 @@ export class Exchange {
         return;
       }
       this._readyChannel = channel;
+      if (rebind) {
+        await Binding._rebindContaining(this, model);
+        if (attempt !== this._attempt) {
+          return;
+        }
+        if (this.connection._isModelClosed(model)) {
+          throw new Error("Connection closed while the bindings were restored");
+        }
+      }
       this._deferred.resolve(ok as InitializeResult);
     } catch (err) {
       if (attempt !== this._attempt) {
@@ -160,8 +180,7 @@ export class Exchange {
         return;
       }
       this.log.warn("Channel of exchange '%s' closed, re-initializing it.", this._name);
-      this._generation = undefined;
-      this._initialize(model, generation).catch(() => {});
+      this._reinitialize(model, generation).catch(() => {});
     });
   }
 
