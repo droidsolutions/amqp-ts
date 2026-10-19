@@ -1,3 +1,60 @@
+# [4.0.0-develop.1](https://github.com/droidsolutions/amqp-ts/compare/v3.0.4...v4.0.0-develop.1) (2026-10-19)
+
+
+* feat!: remove rpc helpers and hide internals from typings ([6b1a9b4](https://github.com/droidsolutions/amqp-ts/commit/6b1a9b495e7f1c5215b2e46992eddc8b3ca50041))
+* feat!: ship as ES module and require Node 22.13 ([9de4f0f](https://github.com/droidsolutions/amqp-ts/commit/9de4f0f3dc24d7816ea8c97ea91c554609362b40))
+* feat!: use amqplib promise API and built-in connection recovery ([a380269](https://github.com/droidsolutions/amqp-ts/commit/a38026965c174d9cae27056808a7a3f5f177e047))
+* fix(deps)!: update amqplib to 2.x ([c305f1b](https://github.com/droidsolutions/amqp-ts/commit/c305f1b12ecee63175f15d08fbab87d09120b11d))
+
+
+### Bug Fixes
+
+* create every binding on a channel of its own ([bfc3e02](https://github.com/droidsolutions/amqp-ts/commit/bfc3e0289069720cda057d375576a571a1fd4d3e))
+* delete a binding on its own channel, once, and settle it ([84a6a34](https://github.com/droidsolutions/amqp-ts/commit/84a6a346a018b96a6e2027ad7496d70992f76191))
+* delete the configuration in phases ([c5003d6](https://github.com/droidsolutions/amqp-ts/commit/c5003d6e23600f7f629d4f90b4b5338af58db165))
+* emit error_connection for every entity and consumer failure ([727075b](https://github.com/droidsolutions/amqp-ts/commit/727075b2b4f3921b1a207c73f8287ef2a2c333bc))
+* isolate failing entities during recovery and settle pending work on close ([c59a521](https://github.com/droidsolutions/amqp-ts/commit/c59a52142b1660be6ea9b7196cd86e005b3c0ca7))
+* keep a message sent while a cancelled consumer's channel closes ([09f10a8](https://github.com/droidsolutions/amqp-ts/commit/09f10a88a91ac7fdb7e3646d15ab5ed34cd0d8ea))
+* keep a refused consumer rejected when its channel is repaired ([a85352f](https://github.com/droidsolutions/amqp-ts/commit/a85352f3c25829411fdc1b321dd59c5ac131c6cc))
+* keep bindings whose re-bind fails until either end is declared again ([37048ab](https://github.com/droidsolutions/amqp-ts/commit/37048abede257105df3ce87558684b6e8330429d))
+* keep cross-connection bindings on the source's own connection ([38ac06e](https://github.com/droidsolutions/amqp-ts/commit/38ac06e6508071644dd017a10b5e110daf139746))
+* leave no orphaned consumer behind when stopping one ([bedd530](https://github.com/droidsolutions/amqp-ts/commit/bedd530c805d5c06412e3d6ce24849d16337777b))
+* leave the newer binding alone when deleting a replaced one ([36c142e](https://github.com/droidsolutions/amqp-ts/commit/36c142e218c78a62834a8e67ceebefd98b7d2459))
+* let a refused consumer be stopped, and its queue closed or deleted ([c747437](https://github.com/droidsolutions/amqp-ts/commit/c74743732e070c28bbfb360ea37d481f6ac46c08))
+* make completeConfiguration reject while something failed ([aba41d2](https://github.com/droidsolutions/amqp-ts/commit/aba41d2fcc518d13873245d4418ba48d8ad37cd3))
+* publish again a message sent while amqplib closes the connection ([9528534](https://github.com/droidsolutions/amqp-ts/commit/952853424a601d125803961ba8e31f46895909b0))
+* report a consumer that the broker cancels in a loop ([fa572d2](https://github.com/droidsolutions/amqp-ts/commit/fa572d2c203bb22a296c0044f9f84b591c35f087))
+* report consumers refused during recovery and isolate every event listener ([a93b78f](https://github.com/droidsolutions/amqp-ts/commit/a93b78f9823d144ac185746a31667eab2375008c))
+* resolve unbind of a binding that does not exist ([b7c2a22](https://github.com/droidsolutions/amqp-ts/commit/b7c2a22cad83e98c6b36c9dcc8702f675f3e7965))
+* restore bindings and broker-cancelled consumers without a reconnect ([f7b1b00](https://github.com/droidsolutions/amqp-ts/commit/f7b1b00415647cfe6f6a07672b88cadee3378ce7))
+* stop registering a refused consumer again and again ([f9a18d0](https://github.com/droidsolutions/amqp-ts/commit/f9a18d0a80541445f8e0a352bdaba4aedf6ac4a1))
+
+
+### BREAKING CHANGES
+
+* Exchange.rpc and Queue.rpc were removed. Exchange.rpc only
+resolved the first call with its reply and lost its reply consumer after a
+reconnect. Send with replyTo/correlationId and consume the reply queue
+instead (see README). Underscore-prefixed members are no longer part of the
+published typings.
+* the third Connection argument is now amqplib's
+RecoveryOptions (initialDelay, maxDelay, factor, jitter, maxRetries,
+initialMaxRetries, calculateDelay) instead of ReconnectStrategy.
+ReconnectStrategy { retries: 0 } (retry forever) is the default
+maxRetries: Infinity; { retries: n } becomes { maxRetries: n }. The fixed
+interval is replaced by exponential backoff with jitter.
+Connection.connection is no longer public; getConnection returns the
+current amqplib ChannelModel. Connection.tryToConnect was removed.
+* amqplib 2 treats heartbeat: 0 as "disable heartbeats"
+instead of "use the server's value". Omit the option to keep the old
+behaviour. Full upstream changelog:
+https://github.com/amqp-node/amqplib/blob/main/CHANGELOG.md
+@types/amqplib is no longer needed, amqplib ships its own types.
+* the package is ESM-only. CommonJS consumers can still
+require() it on Node >= 22.13 (TypeScript: module node20/nodenext).
+Deep imports into lib/ are no longer possible; import from the package root.
+Node < 22.13 is no longer supported.
+
 ## [3.0.4](https://github.com/droidsolutions/amqp-ts/compare/v3.0.3...v3.0.4) (2026-06-23)
 
 
