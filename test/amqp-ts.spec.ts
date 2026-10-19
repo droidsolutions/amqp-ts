@@ -1095,9 +1095,11 @@ describe("Test amqp-ts module", function () {
     });
 
     it("rebuilds exchange to exchange to queue topology after a kill", async function () {
-      const exchange1 = currentConnection.declareExchange(nextExchangeName());
-      const exchange2 = currentConnection.declareExchange(nextExchangeName());
-      const queue = currentConnection.declareQueue(nextQueueName());
+      // the broker removes all of it with the connection: the exclusive queue goes with its connection, then each
+      // autoDelete exchange with its last binding, so only a rebuild can route the message
+      const exchange1 = currentConnection.declareExchange(nextExchangeName(), "fanout", { autoDelete: true });
+      const exchange2 = currentConnection.declareExchange(nextExchangeName(), "fanout", { autoDelete: true });
+      const queue = currentConnection.declareQueue(nextQueueName(), { exclusive: true });
       await exchange2.bind(exchange1);
       await queue.bind(exchange2);
       const { consumer, waitFor } = nextMessage(queue);

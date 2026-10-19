@@ -4,6 +4,7 @@
  * Created by Ab on 2015-10-21.
  */
 import { expect } from "chai";
+import { once } from "node:events";
 import { Connection } from "../src/Connection/Connection.js";
 import { Message } from "../src/Message.js";
 import { restartBroker } from "./helpers/broker.js";
@@ -93,10 +94,10 @@ describe("AMQP Connection class automatic reconnection", function () {
     // initialize
     const connection = newConnection();
 
-    // test code
-    const exchange1 = connection.declareExchange("TestExchange1");
-    const exchange2 = connection.declareExchange("TestExchange2");
-    const queue = connection.declareQueue("TestQueue");
+    // test code: transient entities do not survive the restart, so only a rebuild can route the message
+    const exchange1 = connection.declareExchange("TestTransientExchange1", "fanout", { durable: false });
+    const exchange2 = connection.declareExchange("TestTransientExchange2", "fanout", { durable: false });
+    const queue = connection.declareQueue("TestTransientQueue", { durable: false });
     exchange2.bind(exchange1);
     queue.bind(exchange2);
     queue
@@ -111,10 +112,16 @@ describe("AMQP Connection class automatic reconnection", function () {
         },
         { noAck: true },
       )
+      .then(() => connection.completeConfiguration())
       .then(() => {
-        return restartBroker().then(() => {
-          queue.send(new Message("Test"));
-        });
+        // send once the whole topology is back: a message buffered during the outage goes out as soon as exchange1
+        // is declared again, which can be before its bindings are
+        const reestablished = once(connection, "re_established_connection");
+        return restartBroker()
+          .then(() => reestablished)
+          .then(() => {
+            exchange1.send(new Message("Test"));
+          });
       })
       .catch((err) => {
         console.log("Consumer intialization FAILED!!!");
