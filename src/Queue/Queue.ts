@@ -167,7 +167,7 @@ export class Queue {
    * registration is done.
    * @internal
    */
-  public _initializeConsumer(redeclared = false): Promise<void> {
+  public _initializeConsumer(): Promise<void> {
     const channel = this._readyChannel;
     if (
       this._consumer === undefined ||
@@ -182,7 +182,7 @@ export class Queue {
       this._consumerInitialized = this._consumerDeferred.promise;
     }
     this._consumerChannel = channel;
-    this._consuming = this._consume(channel, this._readyModel, redeclared);
+    this._consuming = this._consume(channel, this._readyModel);
     return this._consuming;
   }
 
@@ -248,17 +248,17 @@ export class Queue {
       this._failure = err as Error;
       // the consumer cannot be registered on a queue that failed
       this._rejectPending(err as Error);
-      this.connection._onEntityFailed(this, err as Error, model, rebind);
+      this.connection._onEntityFailed(this, err as Error);
       throw err;
     }
   }
 
   /**
-   * Registers the consumer on the given channel. A refusal while it is registered again during recovery (for example
-   * 403 because another connection holds an exclusive consumer) is also reported through `error_connection`, since
-   * the consumer would otherwise stop silently.
+   * Registers the consumer on the given channel. A refusal (for example 403 because another connection holds an
+   * exclusive consumer) is also reported through `error_connection`, since during recovery the consumer would
+   * otherwise stop silently.
    */
-  private async _consume(channel: Channel, model: ChannelModel, redeclared: boolean): Promise<void> {
+  private async _consume(channel: Channel, model: ChannelModel): Promise<void> {
     const options = this._consumerOptions;
     try {
       const ok = await channel.consume(
@@ -287,7 +287,7 @@ export class Queue {
       this.log.error({ err }, "Failed to start the consumer of queue '%s'.", this._name);
       this._consumerRefusedIn = this._generation;
       this._consumerDeferred.reject(err as Error);
-      this.connection._reportRecoveryFailure(err as Error, model, redeclared);
+      this.connection._reportFailure(err as Error);
       throw err;
     }
   }
@@ -321,7 +321,7 @@ export class Queue {
       }
       this.log.warn("Channel of queue '%s' closed, re-initializing it.", this._name);
       this._reinitialize(model, generation)
-        .then(() => (consumeFailed ? undefined : this._initializeConsumer(true)))
+        .then(() => (consumeFailed ? undefined : this._initializeConsumer()))
         .catch(() => {});
     });
   }
@@ -481,7 +481,7 @@ export class Queue {
       );
       this.log.error({ err }, "%s", err.message);
       // the consumer is gone until then, nobody would notice otherwise
-      this.connection._reportRecoveryFailure(err, this._readyModel, true);
+      this.connection._reportFailure(err);
       return;
     }
     this.log.warn("The consumer of queue '%s' was cancelled by the broker, re-initializing the queue.", this._name);

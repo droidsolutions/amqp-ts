@@ -127,16 +127,10 @@ export class Connection extends EventEmitter {
    * declared and its {@link initialized} is rejected.
    *
    * The bindings of a failed exchange or queue can never be created any more, so they are rejected and removed as
-   * well. A failure while the entity was declared again, in the setup after a reconnect or after its channel closed,
-   * is also emitted as `error_connection`, because nobody awaits {@link initialized} then.
+   * well. The failure is emitted as `error_connection`, see {@link _reportFailure}.
    * @internal
    */
-  public _onEntityFailed(
-    entity: Exchange | Queue | Binding,
-    err: Error,
-    model: ChannelModel,
-    redeclared: boolean,
-  ): void {
+  public _onEntityFailed(entity: Exchange | Queue | Binding, err: Error): void {
     if (!(entity instanceof Binding)) {
       for (const [id, binding] of Object.entries(this._bindings)) {
         if (binding._source === entity || binding._destination === entity) {
@@ -145,19 +139,17 @@ export class Connection extends EventEmitter {
         }
       }
     }
-    this._reportRecoveryFailure(err, model, redeclared);
+    this._reportFailure(err);
   }
 
   /**
-   * Emits `error_connection` for a failure while something was declared again: in the setup after a
-   * reconnect (on that setup's model), or after a channel closed (`redeclared`). Nobody awaits the promises then, so
-   * this is the only signal. Failures of a first declaration reject the promise their caller has instead.
+   * Emits `error_connection` for an exchange, queue, binding or consumer that failed on its own, whether it was
+   * declared for the first time or again during recovery. Nobody has to await the entity's promise, for example after
+   * a `declareQueue` nobody awaits or during recovery, so this is the one signal that always arrives.
    * @internal
    */
-  public _reportRecoveryFailure(err: Error, model: ChannelModel, redeclared: boolean): void {
-    if (redeclared || (this._connectedBefore && model === this._setupModel)) {
-      this._emitSafely("error_connection", err);
-    }
+  public _reportFailure(err: Error): void {
+    this._emitSafely("error_connection", err);
   }
 
   /**

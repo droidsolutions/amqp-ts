@@ -1538,14 +1538,15 @@ describe("Test amqp-ts module", function () {
         await rawChannel.assertQueue(queueName);
         await rawChannel.consume(queueName, () => {}, { exclusive: true });
 
+        const errors: Error[] = [];
+        currentConnection.on("error_connection", (err: Error) => errors.push(err));
         const queue = currentConnection.declareQueue(queueName);
-        // the first registration only rejects the consumer promise, its caller handles that
+        // the first registration is reported as well
         await expect(queue.activateConsumer(() => {})).to.be.rejectedWith("403");
         await new Promise((resolve) => setTimeout(resolve, 200));
         await queue.initialized;
+        expect(errors, "one error_connection for the first registration").to.have.length(1);
 
-        const errors: Error[] = [];
-        currentConnection.on("error_connection", (err: Error) => errors.push(err));
         const lost = once(currentConnection, "lost_connection");
         const reestablished = once(currentConnection, "re_established_connection");
         expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
@@ -1556,8 +1557,8 @@ describe("Test amqp-ts module", function () {
         await expect(within(consumer, 2000, "the consumer promise")).to.be.rejectedWith("403");
         // it is not registered again until the next reconnect
         await new Promise((resolve) => setTimeout(resolve, 1500));
-        expect(errors, "one error_connection for the consumer").to.have.length(1);
-        expect(errors[0].message).to.contain("403");
+        expect(errors, "one more error_connection for the setup").to.have.length(2);
+        expect(errors[1].message).to.contain("403");
       } finally {
         await raw.close();
         // it was created on the raw connection, so do not rely on the cleanup
@@ -1945,6 +1946,31 @@ describe("Test amqp-ts module", function () {
       // without acknowledgements there is nothing to give back
       internals._createConsumerWrapper(channel, true)(message);
       expect(requeued).to.eql([true]);
+    });
+
+    it("emits error_connection for entities that fail at their first declaration", async function () {
+      const errors: Error[] = [];
+      currentConnection.on("error_connection", (err: Error) => errors.push(err));
+      // declared before the first connect, so the first setup declares it
+      const exchange = currentConnection.declareExchange(nextExchangeName(), "fanout", { noCreate: true });
+      await currentConnection.initialized;
+      // declared later and not awaited by anyone
+      const queue = currentConnection.declareQueue(nextQueueName(), { noCreate: true });
+      const headers = currentConnection.declareExchange(nextExchangeName(), "headers");
+      const target = currentConnection.declareQueue(nextQueueName());
+      void target.bind(headers, "", { "x-match": "bogus" });
+
+      await expect(exchange.initialized).to.be.rejectedWith("NOT-FOUND");
+      await expect(queue.initialized).to.be.rejectedWith("NOT-FOUND");
+      const deadline = Date.now() + 3000;
+      while (errors.length < 3 && Date.now() < deadline) {
+        await sleep(50);
+      }
+      const messages = errors.map((err) => err.message);
+      expect(messages, "one error_connection per failed entity").to.have.length(3);
+      expect(messages.filter((message) => message.includes(exchange.name))).to.have.length(1);
+      expect(messages.filter((message) => message.includes(queue.name))).to.have.length(1);
+      expect(messages.filter((message) => message.includes("x-match"))).to.have.length(1);
     });
   });
 });

@@ -284,7 +284,7 @@ export class Binding {
       );
       delete destination.connection._bindings[Binding.id(destination, source, this.pattern)];
       this._deferred.reject(err as Error);
-      destination.connection._onEntityFailed(this, err as Error, model, false);
+      destination.connection._onEntityFailed(this, err as Error);
       throw err;
     }
   }

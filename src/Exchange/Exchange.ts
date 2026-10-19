@@ -174,7 +174,7 @@ export class Exchange {
       delete this.connection._exchanges[this._name];
       this._failure = err as Error;
       this._deferred.reject(err as Error);
-      this.connection._onEntityFailed(this, err as Error, model, rebind);
+      this.connection._onEntityFailed(this, err as Error);
       throw err;
     }
   }
