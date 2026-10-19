@@ -55,7 +55,7 @@ export default defineConfig([
     },
 
     rules: {
-      // the plugin cannot resolve the explicit "amqplib/callback_api.js" subpath, which Node ESM requires
+      // the plugin cannot resolve the "amqplib/callback_api" subpath, which only exists through the exports map
       "n/no-missing-import": ["error", { allowModules: ["amqplib"] }],
       "comma-dangle": ["error", "always-multiline"],
       "dot-notation": ["error"],

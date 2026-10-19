@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import * as AmqpLib from "amqplib/callback_api.js";
+import * as AmqpLib from "amqplib/callback_api";
 import * as os from "node:os";
 import { ApplicationName, DIRECT_REPLY_TO_QUEUE } from "../amqp-ts.js";
 import { Binding } from "../Binding.js";
@@ -68,7 +68,7 @@ export class Exchange {
           this.connection.connection.createChannel((createChannelError, channel) => {
             /* istanbul ignore if */
             if (createChannelError) {
-              reject(createChannelError as Error);
+              reject(createChannelError);
             } else {
               this._channel = channel;
               const callback = (err: Error, ok: InitializeResult): void => {
@@ -181,14 +181,14 @@ export class Exchange {
             this._channel.deleteExchange(this._name, {}, (deleteExchangeError, _ok) => {
               /* istanbul ignore if */
               if (deleteExchangeError) {
-                reject(deleteExchangeError as Error);
+                reject(deleteExchangeError);
               } else {
                 this._channel.close((channelCloseError) => {
                   delete this.initialized; // invalidate exchange
                   delete this.connection._exchanges[this._name]; // remove the exchange from our administration
                   /* istanbul ignore if */
                   if (channelCloseError) {
-                    reject(channelCloseError as Error);
+                    reject(channelCloseError);
                   } else {
                     delete this._channel;
                     delete this.connection;
@@ -222,7 +222,7 @@ export class Exchange {
             this._channel.close((err) => {
               /* istanbul ignore if */
               if (err) {
-                reject(err as Error);
+                reject(err);
               } else {
                 delete this._channel;
                 delete this.connection;

@@ -1,4 +1,4 @@
-import * as AmqpLib from "amqplib/callback_api.js";
+import * as AmqpLib from "amqplib/callback_api";
 import { EventEmitter } from "node:events";
 import { Binding } from "../Binding.js";
 import { DeclarationOptions as ExchangeDeclarationOptions } from "../Exchange/DeclarationOptions.js";
@@ -66,6 +66,7 @@ export class Connection extends EventEmitter {
   }
 
   public tryToConnect(thisConnection: Connection, retry: number, callback: (err: any) => void): void {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     AmqpLib.connect(thisConnection.url, thisConnection.socketOptions, (err: Error, connection) => {
       /* istanbul ignore if */
       if (err) {
@@ -163,7 +164,7 @@ export class Connection extends EventEmitter {
         this.connection.close((err) => {
           /* istanbul ignore if */
           if (err) {
-            reject(err as Error);
+            reject(err);
           } else {
             this.isConnected = false;
             this.emit("close_connection");

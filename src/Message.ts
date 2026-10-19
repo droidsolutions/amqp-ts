@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import * as AmqpLib from "amqplib/callback_api.js";
+import * as AmqpLib from "amqplib/callback_api";
 import { AmqpProperties } from "./AmqpProperties.js";
 import { Exchange } from "./Exchange/Exchange.js";
 import { SimpleLogger } from "./LoggerFactory.js";
