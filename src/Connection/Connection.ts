@@ -161,6 +161,15 @@ export class Connection extends EventEmitter {
   }
 
   /**
+   * The model entities are initialized on right now: the current one, or while `setup` runs the one it runs for.
+   * `undefined` while disconnected.
+   * @internal
+   */
+  public get _activeModel(): ChannelModel | undefined {
+    return this._model ?? this._setupModel;
+  }
+
+  /**
    * Whether the given model has closed.
    * @internal
    */

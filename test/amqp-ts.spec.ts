@@ -1706,4 +1706,82 @@ describe("Test amqp-ts module", function () {
       }
     });
   });
+
+  describe("topology deletion and failure reporting", function () {
+    this.timeout(ReconnectTimeout);
+
+    function sleep(ms: number): Promise<void> {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    it("settles a pending binding when it is deleted", async function () {
+      // the broker deletes an autoDelete exchange together with the last queue bound to it
+      const exchange = currentConnection.declareExchange(nextExchangeName(), "fanout", { autoDelete: true });
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+      const binding = await queue.bind(exchange);
+      const { consumer } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      // the queue re-initializes after the consumer cancel, but cannot re-bind: the exchange is gone as well
+      const firstQueue = queue.initialized;
+      await deleteOnBroker("queue", queueName);
+      await replaced(() => queue.initialized, firstQueue);
+      const pending = binding.initialized;
+      const channel = queue._channel;
+      const ready = queue.initialized;
+
+      const deleting = binding.delete();
+      await expect(within(pending, 2000, "the pending binding")).to.be.rejectedWith("deleted");
+      // the exchange is gone and the binding with it, so there is nothing left to delete
+      await within(deleting, 2000, "delete");
+      expect(Object.keys(currentConnection._bindings), "the binding is no longer declared").to.eql([]);
+      await sleep(300);
+      expect(queue._channel, "the queue's channel is left alone").to.equal(channel);
+      expect(queue.initialized, "the queue is not re-initialized").to.equal(ready);
+    });
+
+    it("unbinds on a channel of its own, so a failing unbind leaves the queue alone", async function () {
+      const exchange = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const queue = currentConnection.declareQueue(nextQueueName());
+      await queue.bind(exchange);
+      await currentConnection.completeConfiguration();
+      const channel = queue._channel;
+      const ready = queue.initialized;
+
+      // the broker refuses any unbind from the default exchange with 403, which closes the channel it runs on
+      const prototype = Object.getPrototypeOf(channel) as AmqpLib.Channel;
+      const { unbindQueue } = prototype;
+      prototype.unbindQueue = function (
+        this: AmqpLib.Channel,
+        queueName: string,
+        _source: string,
+        pattern: string,
+        args?: unknown,
+      ) {
+        return unbindQueue.call(this, queueName, "", pattern, args) as ReturnType<AmqpLib.Channel["unbindQueue"]>;
+      };
+      try {
+        await expect(within(queue.unbind(exchange), 2000, "unbind")).to.be.rejectedWith("403");
+      } finally {
+        prototype.unbindQueue = unbindQueue;
+      }
+      await sleep(300);
+      expect(queue._channel, "the queue's channel is left alone").to.equal(channel);
+      expect(queue.initialized, "the queue is not re-initialized").to.equal(ready);
+      expect(Object.keys(currentConnection._bindings), "the binding is not created again").to.eql([]);
+    });
+
+    it("deletes a binding only once when it is deleted repeatedly", async function () {
+      const exchange = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const binding = await queue.bind(exchange);
+
+      const first = binding.delete();
+      expect(binding.delete(), "the same promise").to.equal(first);
+      await within(first, 2000, "delete");
+      await within(binding.delete(), 2000, "a later delete");
+    });
+  });
 });

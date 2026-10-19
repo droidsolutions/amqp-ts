@@ -48,6 +48,10 @@ export class Binding {
   private _initializing: Promise<void> = Promise.resolve();
   /** Changes with every initialization, so a superseded one can tell. */
   private _attempt = 0;
+  /** The creation of the binding on the broker that is in flight, if any. Never rejects. */
+  private _creating: Promise<void> = Promise.resolve();
+  /** Set once {@link delete} was called, after which nothing creates the binding again. */
+  private _deleting: Promise<void> | undefined;
 
   constructor(
     destination: Exchange | Queue,
@@ -75,6 +79,9 @@ export class Binding {
    * @internal
    */
   public _initialize(model: ChannelModel, generation: number): Promise<void> {
+    if (this._deleting !== undefined) {
+      return this._initializing;
+    }
     if (this._generation !== generation) {
       this._generation = generation;
       this._initializing = this._bind(model, generation, ++this._attempt);
@@ -113,6 +120,9 @@ export class Binding {
     const destination = this._destination;
     const source = this._source;
     const connection = destination.connection;
+    if (this._deleting !== undefined) {
+      return;
+    }
     this._invalidate();
     try {
       await this._create(model);
@@ -180,24 +190,48 @@ export class Binding {
   }
 
   /**
-   * Creates the binding on a short-lived channel of the given model. A failing bind closes the channel it runs on, so
-   * it must not be the destination's channel, which would then re-initialize, nor one shared with other bindings,
-   * which would then fail as well.
+   * Creates the binding on a short-lived channel of the given model. The creation is tracked, so {@link delete} can
+   * wait for it instead of unbinding before it.
    */
-  private async _create(model: ChannelModel): Promise<void> {
+  private _create(model: ChannelModel): Promise<void> {
     const destination = this._destination;
     const source = this._source;
+    const creating = this._onOwnChannel(model, "Binding", (channel) =>
+      destination instanceof Queue
+        ? channel.bindQueue(destination.name, source.name, this.pattern, this.args)
+        : channel.bindExchange(destination.name, source.name, this.pattern, this.args),
+    );
+    this._creating = creating.then(
+      () => {},
+      () => {},
+    );
+    return creating;
+  }
+
+  /**
+   * Runs a bind or unbind on a short-lived channel of the given model. A failing bind or unbind closes the channel it
+   * runs on, so it must not be the destination's channel, which would then re-initialize, nor one shared with other
+   * bindings, which would then fail as well.
+   */
+  private async _onOwnChannel(
+    model: ChannelModel,
+    operation: string,
+    run: (channel: Channel) => Promise<unknown>,
+  ): Promise<void> {
     let channel: Channel | undefined;
     try {
       channel = await model.createChannel();
       channel.on("error", (err: Error) => {
-        this.log.debug({ err }, "Binding %s->%s failed: %s", source.name, destination.name, err.message);
+        this.log.debug(
+          { err },
+          "%s %s->%s failed: %s",
+          operation,
+          this._source.name,
+          this._destination.name,
+          err.message,
+        );
       });
-      if (destination instanceof Queue) {
-        await channel.bindQueue(destination.name, source.name, this.pattern, this.args);
-      } else {
-        await channel.bindExchange(destination.name, source.name, this.pattern, this.args);
-      }
+      await run(channel);
     } finally {
       channel?.close().catch(() => {});
     }
@@ -215,6 +249,9 @@ export class Binding {
       ]);
       if (attempt !== this._attempt) {
         return;
+      }
+      if (this._deleting !== undefined) {
+        throw new Error(`Binding ${this.id} was deleted`);
       }
       await this._create(model);
       if (attempt !== this._attempt) {
@@ -253,16 +290,33 @@ export class Binding {
   }
 
   /**
-   * Deletes this binding of either a queue or an exchange.
+   * Deletes this binding of either a queue or an exchange. It is no longer declared from then on, so nothing creates it
+   * again, and an {@link initialized} that is still pending rejects. The unbind runs once the destination is
+   * initialized, on a short-lived channel. Deleting it again returns the same promise, also after a failure.
    */
-  public async delete(): Promise<void> {
+  public delete(): Promise<void> {
+    this._deleting ??= this._delete();
+    return this._deleting;
+  }
+
+  private async _delete(): Promise<void> {
     const destination = this._destination;
-    await destination.initialized;
-    if (destination instanceof Queue) {
-      await destination._channel.unbindQueue(destination.name, this._source.name, this.pattern, this.args);
-    } else {
-      await destination._channel.unbindExchange(destination.name, this._source.name, this.pattern, this.args);
+    const connection = destination.connection;
+    if (this._isDeclared) {
+      delete connection._bindings[this.id];
     }
-    delete destination.connection._bindings[Binding.id(destination, this._source, this.pattern)];
+    this._rejectPending(new Error(`Binding ${this.id} was deleted`));
+    await destination.initialized;
+    // a creation that is still in flight would create it again after the unbind
+    await this._creating;
+    const model = connection._activeModel;
+    if (model === undefined) {
+      throw new Error(`Connection lost while binding ${this.id} was deleted`);
+    }
+    await this._onOwnChannel(model, "Unbind", (channel) =>
+      destination instanceof Queue
+        ? channel.unbindQueue(destination.name, this._source.name, this.pattern, this.args)
+        : channel.unbindExchange(destination.name, this._source.name, this.pattern, this.args),
+    );
   }
 }
