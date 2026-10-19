@@ -255,14 +255,16 @@ export class Exchange {
   }
 
   /**
-   * Unbinds the given exchange from the connection.
+   * Unbinds this exchange from the given source exchange by deleting the binding. Resolves right away if there is no
+   * such binding, for example because it was unbound before.
    *
    * @param source The exchange to unbind from.
    * @param pattern The pattern.
    * @param _args Any addtional arguments.
    */
-  public unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
-    return this.connection._bindings[Binding.id(this, source, pattern)].delete();
+  public async unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
+    // a binding that does not exist (any more) has nothing to delete
+    await this.connection._bindings[Binding.id(this, source, pattern)]?.delete();
   }
 
   /** Returns a string containing the name of the exchange, the name of the host and the process ID. */

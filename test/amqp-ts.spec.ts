@@ -1783,5 +1783,26 @@ describe("Test amqp-ts module", function () {
       await within(first, 2000, "delete");
       await within(binding.delete(), 2000, "a later delete");
     });
+
+    it("resolves unbind of a binding that does not exist", async function () {
+      const exchange1 = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const exchange2 = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const queue = currentConnection.declareQueue(nextQueueName());
+      await currentConnection.completeConfiguration();
+
+      let unbinding: Promise<void> | undefined;
+      expect(() => (unbinding = queue.unbind(exchange1)), "queue.unbind does not throw").to.not.throw();
+      await within(unbinding, 2000, "queue.unbind");
+      expect(() => (unbinding = exchange2.unbind(exchange1)), "exchange.unbind does not throw").to.not.throw();
+      await within(unbinding, 2000, "exchange.unbind");
+
+      // nor does unbinding a second time
+      await queue.bind(exchange1);
+      await exchange2.bind(exchange1);
+      await queue.unbind(exchange1);
+      await exchange2.unbind(exchange1);
+      await within(queue.unbind(exchange1), 2000, "the second queue.unbind");
+      await within(exchange2.unbind(exchange1), 2000, "the second exchange.unbind");
+    });
   });
 });

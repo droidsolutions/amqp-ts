@@ -520,13 +520,15 @@ export class Queue {
   }
 
   /**
-   * Unbinds the queue from the given exchange by deleting the binding.
+   * Unbinds the queue from the given exchange by deleting the binding. Resolves right away if there is no such
+   * binding, for example because it was unbound before.
    *
    * @param source The exchange to unbind from.
    * @param pattern The pattern the queue was bind with.
    * @param _args Any additional arguments.
    */
-  public unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
-    return this.connection._bindings[Binding.id(this, source, pattern)].delete();
+  public async unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
+    // a binding that does not exist (any more) has nothing to delete
+    await this.connection._bindings[Binding.id(this, source, pattern)]?.delete();
   }
 }
