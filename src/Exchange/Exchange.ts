@@ -20,8 +20,10 @@ export class Exchange {
    * when the connection is closed or recovery gives up while it is pending.
    */
   public initialized: Promise<InitializeResult>;
-  /** The underlying AMQP channel. */
-  /** @internal */
+  /**
+   * The underlying AMQP channel.
+   * @internal
+   */
   public _channel: Channel;
   /** Gets the name of the exchange. */
   public get name(): string {
@@ -81,7 +83,6 @@ export class Exchange {
    * Creates a channel on the given model and declares the exchange on it, then settles {@link initialized}. Does
    * nothing if the exchange was already initialized for the given generation.
    * @internal
-   * @internal
    */
   public _initialize(model: ChannelModel, generation: number): Promise<void> {
     if (this.connection._exchanges[this._name] !== this) {
@@ -98,7 +99,6 @@ export class Exchange {
   /**
    * Replaces a settled {@link initialized} with a pending one, until the exchange is initialized again.
    * @internal
-   * @internal
    */
   public _invalidate(): void {
     this._readyChannel = undefined;
@@ -110,7 +110,6 @@ export class Exchange {
 
   /**
    * Rejects {@link initialized} if it is still pending. Used when the connection is closed or recovery gave up.
-   * @internal
    * @internal
    */
   public _rejectPending(err: Error): void {

@@ -73,7 +73,6 @@ export class Binding {
    * the given generation, then settles {@link initialized}. Does nothing if the binding was already initialized for the
    * given generation. A source on another connection is only waited for, its own connection initializes it.
    * @internal
-   * @internal
    */
   public _initialize(model: ChannelModel, generation: number): Promise<void> {
     if (this._generation !== generation) {
@@ -88,7 +87,6 @@ export class Binding {
    * was declared again, because a broker-side delete of an exchange or queue removes its bindings as well. Never
    * rejects, every binding handles its own failure. Only the bindings kept by the entity's own connection are created
    * again, so the given model is always that of their destination's connection.
-   * @internal
    * @internal
    */
   public static async _rebindContaining(connectionPoint: Exchange | Queue, model: ChannelModel): Promise<void> {
@@ -109,7 +107,6 @@ export class Binding {
    *
    * A binding that was deleted or replaced by binding the same pair again meanwhile is settled right away, since
    * nothing would create it again.
-   * @internal
    * @internal
    */
   public async _rebind(model: ChannelModel): Promise<void> {
@@ -154,7 +151,6 @@ export class Binding {
   /**
    * Replaces a settled {@link initialized} with a pending one, until the binding is created again.
    * @internal
-   * @internal
    */
   public _invalidate(): void {
     if (this._deferred.settled) {
@@ -166,7 +162,6 @@ export class Binding {
   /**
    * Rejects {@link initialized} if it is still pending. Used when the connection is closed, recovery gave up or an end
    * of the binding failed.
-   * @internal
    * @internal
    */
   public _rejectPending(err: Error): void {

@@ -24,11 +24,15 @@ export class Queue {
    * rejects when the queue fails on its own, or when the connection is closed or recovery gives up while it is pending.
    */
   public initialized: Promise<InitializeResult>;
-  /** The AMQP channel. */
-  /** @internal */
+  /**
+   * The AMQP channel.
+   * @internal
+   */
   public _channel: Channel;
-  /** A promise that resolves when a consumer handler is registered and initialized. */
-  /** @internal */
+  /**
+   * A promise that resolves when a consumer handler is registered and initialized.
+   * @internal
+   */
   public _consumerInitialized: Promise<StartConsumerResult>;
   private _name: string;
   /** @internal */
@@ -103,7 +107,6 @@ export class Queue {
    * if the queue was already initialized for the given generation. The consumer is started by
    * {@link _initializeConsumer}.
    * @internal
-   * @internal
    */
   public _initialize(model: ChannelModel, generation: number): Promise<void> {
     if (this.connection._queues[this._name] !== this) {
@@ -120,7 +123,6 @@ export class Queue {
   /**
    * Replaces a settled {@link initialized} (and consumer promise) with a pending one, until the queue is initialized
    * again.
-   * @internal
    * @internal
    */
   public _invalidate(): void {
@@ -144,7 +146,6 @@ export class Queue {
    * Rejects {@link initialized} and the consumer promise if they are still pending. Used when the connection is closed
    * or recovery gave up.
    * @internal
-   * @internal
    */
   public _rejectPending(err: Error): void {
     if (!this._deferred.settled) {
@@ -158,7 +159,6 @@ export class Queue {
   /**
    * Registers the consumer, if there is one, on the channel the queue is declared on, unless it already is
    * registered there.
-   * @internal
    * @internal
    */
   public _initializeConsumer(redeclared = false): Promise<void> {

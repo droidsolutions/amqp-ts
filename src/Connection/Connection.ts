@@ -24,13 +24,11 @@ export class Connection extends EventEmitter {
   /**
    * The current underlying amqplib model, `undefined` while disconnected.
    * @internal
-   * @internal
    */
   public _model: ChannelModel | undefined;
   /**
    * Identifies the current underlying model. Changes on each successful connect, so entities can tell whether they
    * are initialized on the current connection.
-   * @internal
    * @internal
    */
   public _generation = 0;
@@ -112,7 +110,7 @@ export class Connection extends EventEmitter {
   }
 
   /**
-   * @internal A new deferred for an entity's promise. Once the connection was closed or recovery gave up nothing would
+   * A new deferred for an entity's promise. Once the connection was closed or recovery gave up nothing would
    * ever settle it, so it is rejected right away.
    * @internal
    */
@@ -125,7 +123,7 @@ export class Connection extends EventEmitter {
   }
 
   /**
-   * @internal An exchange, queue or binding failed on its own, not because the connection was lost: it is no longer
+   * An exchange, queue or binding failed on its own, not because the connection was lost: it is no longer
    * declared and its {@link initialized} is rejected.
    *
    * The bindings of a failed exchange or queue can never be created any more, so they are rejected and removed as
@@ -151,7 +149,7 @@ export class Connection extends EventEmitter {
   }
 
   /**
-   * @internal Emits `error_connection` for a failure while something was declared again: in the setup after a
+   * Emits `error_connection` for a failure while something was declared again: in the setup after a
    * reconnect (on that setup's model), or after a channel closed (`redeclared`). Nobody awaits the promises then, so
    * this is the only signal. Failures of a first declaration reject the promise their caller has instead.
    * @internal
@@ -162,14 +160,16 @@ export class Connection extends EventEmitter {
     }
   }
 
-  /** @internal Whether the given model has closed. */
-  /** @internal */
+  /**
+   * Whether the given model has closed.
+   * @internal
+   */
   public _isModelClosed(model: ChannelModel): boolean {
     return this._closedModels.has(model);
   }
 
   /**
-   * @internal Whether a channel of the given model may be re-created after it closed: the model is open, and it is
+   * Whether a channel of the given model may be re-created after it closed: the model is open, and it is
    * either the current one or the one `setup` is running for.
    * @internal
    */

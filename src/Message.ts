@@ -11,11 +11,15 @@ import { Queue } from "./Queue/Queue.js";
  */
 export class Message {
   public fields: any;
-  /** for received messages only: the channel it has been received on */
-  /** @internal */
+  /**
+   * for received messages only: the channel it has been received on
+   * @internal
+   */
   public _channel: Channel;
-  /** received messages only: original amqplib message */
-  /** @internal */
+  /**
+   * received messages only: original amqplib message
+   * @internal
+   */
   public _message: AmqpMessage;
   /** Additional AQMP properties of the message. */
   public properties: AmqpProperties;
