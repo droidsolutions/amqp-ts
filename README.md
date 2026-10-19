@@ -269,7 +269,7 @@ When the library detects that the connection with the AMQP server is lost, it re
 | `initialDelay`      | `100`      | Delay before the first retry, in milliseconds.                                                            |
 | `maxDelay`          | `30000`    | Upper bound of the delay, in milliseconds.                                                                |
 | `factor`            | `2`        | The delay is multiplied by this factor after every attempt (exponential backoff).                         |
-| `jitter`            | `0.2`      | Random fraction (0 to 1) added to the delay to avoid all clients reconnecting at once.                    |
+| `jitter`            | `0.2`      | Fraction (0 to 1) by which each delay randomly varies up or down, so not all clients reconnect at once. The delay never exceeds `maxDelay`. |
 | `maxRetries`        | `Infinity` | Number of reconnect attempts before giving up. Also bounds the first connect unless `initialMaxRetries` is set. |
 | `initialMaxRetries` | `maxRetries` | Number of attempts before the first successful connect only. Afterwards `maxRetries` applies.           |
 | `calculateDelay`    | -          | `(attempt: number) => number`, your own delay in milliseconds (attempts start at 1) instead of the backoff. |
@@ -294,7 +294,7 @@ await connection.initialized; // rejects if the broker is still unreachable afte
 ### What happens on connection loss
 
 - On `lost_connection` the connection and all exchanges, queues, bindings and consumers become "not initialized" and their `initialized` promises are replaced by pending ones. Messages you send meanwhile are buffered.
-- After each reconnect the topology is declared again in dependency order (exchanges, queues, bindings, consumers) before `re_established_connection` (or `open_connection` for the first connect) is emitted and the pending promises resolve.
+- After each reconnect the topology is declared again in dependency order (exchanges, queues, bindings, consumers) before `re_established_connection` (or `open_connection` for the first connect) is emitted and the pending promises resolve. A binding to an exchange of another `Connection` is the exception: it waits for that connection to have the exchange initialized, so it may be created later.
 - If recovery gives up (finite `maxRetries`), `error_connection` fires with the give-up error, every pending `initialized` rejects, and buffered messages are dropped with a warn log.
 - Without a reconnect: when the broker closes the channel of a single exchange or queue (for example error 406 on a double ack, or 404 when publishing to a deleted exchange), only that entity gets a new channel, including its bindings and consumer. A consumer cancelled by the broker (for example because its queue was deleted) is registered again. If the broker cancels it again within a second of that, it stays cancelled until the next reconnect and `error_connection` is emitted.
 
@@ -394,7 +394,7 @@ Version 4.0 is a major release. This section lists everything you have to change
   ```
 
   `{ retries: 0 }` (forever) becomes the default, `{ retries: n }` becomes `{ maxRetries: n }`, and the `interval` becomes `initialDelay`/`maxDelay`/`factor`/`jitter`. New is `initialMaxRetries`, which lets startup fail fast while later recovery retries forever. The `ReconnectStrategy` type is gone.
-- **`heartbeat: 0` disables heartbeats.** amqplib 2 treats `heartbeat: 0` in the socket options as "no heartbeats" instead of "use the server's value". If you passed `{ heartbeat: 0 }` to get the server's value, omit the option instead.
+- **`heartbeat=0` disables heartbeats.** amqplib reads the heartbeat from the query of the connection URL (`amqp://localhost?heartbeat=0`), not from the socket options. amqplib 2 treats `heartbeat=0` as "no heartbeats" instead of "use the server's value". If your URL contains `heartbeat=0` to get the server's value, remove the parameter instead.
 - **`Exchange.rpc` and `Queue.rpc` are removed.** `rpc` only resolved the first call with its reply and lost its reply consumer after a reconnect. Send a message with `replyTo` and `correlationId` and consume the reply queue instead; the consumer's return value is sent back automatically. See [Automatic ReplyTo and RPC](#rpc):
 
   ```ts
