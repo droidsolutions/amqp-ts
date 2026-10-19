@@ -395,27 +395,29 @@ export class Connection extends EventEmitter {
   }
 
   /**
-   * Delete the whole defined connection topology:
-   * return promise that fulfills after all defined exchanges, queues and bindings have been removed
+   * Deletes the whole defined topology in phases: first the bindings, then the queues together with their consumers,
+   * then the exchanges. Deleting a queue or an exchange deletes its bindings as well, so running the phases one after
+   * the other unbinds every binding only once. A phase that fails does not stop the next one.
+   *
+   * @return A promise that fulfills after all defined exchanges, queues and bindings have been removed, and rejects
+   * with the first failure otherwise.
    */
-  public deleteConfiguration(): Promise<any> {
-    const promises: Promise<any>[] = [];
-    for (const bindingId in this._bindings) {
-      const binding: Binding = this._bindings[bindingId];
-      promises.push(binding.delete());
-    }
-    for (const queueId in this._queues) {
-      const queue: Queue = this._queues[queueId];
-      if (queue._consumerInitialized !== undefined) {
-        promises.push(queue.stopConsumer());
+  public async deleteConfiguration(): Promise<any> {
+    const failures: unknown[] = [];
+    const phase = async (deletions: Promise<unknown>[]): Promise<void> => {
+      for (const result of await Promise.allSettled(deletions)) {
+        if (result.status === "rejected") {
+          failures.push(result.reason);
+        }
       }
-      promises.push(queue.delete());
+    };
+    await phase(Object.values(this._bindings).map((binding) => binding.delete()));
+    // deleting a queue stops its consumer first
+    await phase(Object.values(this._queues).map((queue) => queue.delete()));
+    await phase(Object.values(this._exchanges).map((exchange) => exchange.delete()));
+    if (failures.length > 0) {
+      throw failures[0];
     }
-    for (const exchangeId in this._exchanges) {
-      const exchange: Exchange = this._exchanges[exchangeId];
-      promises.push(exchange.delete());
-    }
-    return Promise.all(promises);
   }
 
   /**

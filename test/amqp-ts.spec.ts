@@ -1710,6 +1710,27 @@ describe("Test amqp-ts module", function () {
   describe("topology deletion and failure reporting", function () {
     this.timeout(ReconnectTimeout);
 
+    /** Opens a raw channel on a separate connection, for looking at the broker behind the library's back. */
+    async function rawChannel(): Promise<{ channel: AmqpLib.Channel; close: () => Promise<void> }> {
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      const channel = await raw.createChannel();
+      channel.on("error", () => {});
+      return { channel, close: () => raw.close() };
+    }
+
+    /** Whether an exchange or a queue exists on the broker. */
+    async function existsOnBroker(kind: "exchange" | "queue", name: string): Promise<boolean> {
+      const raw = await rawChannel();
+      try {
+        await (kind === "exchange" ? raw.channel.checkExchange(name) : raw.channel.checkQueue(name));
+        return true;
+      } catch {
+        return false;
+      } finally {
+        await raw.close();
+      }
+    }
+
     function sleep(ms: number): Promise<void> {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
@@ -1803,6 +1824,42 @@ describe("Test amqp-ts module", function () {
       await exchange2.unbind(exchange1);
       await within(queue.unbind(exchange1), 2000, "the second queue.unbind");
       await within(exchange2.unbind(exchange1), 2000, "the second exchange.unbind");
+    });
+
+    it("deletes the configuration in phases, unbinding every binding once", async function () {
+      const exchange1 = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const exchange2 = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const queue = currentConnection.declareQueue(nextQueueName());
+      await exchange2.bind(exchange1);
+      await queue.bind(exchange2);
+      const { consumer } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      // record the broker operations in the order they are started
+      const prototype = Object.getPrototypeOf(queue._channel) as Record<string, (...args: unknown[]) => unknown>;
+      const operations = ["unbindQueue", "unbindExchange", "deleteQueue", "deleteExchange"];
+      const originals = operations.map((operation) => prototype[operation]);
+      const calls: string[] = [];
+      operations.forEach((operation, i) => {
+        prototype[operation] = function (this: AmqpLib.Channel, ...args: unknown[]) {
+          calls.push(operation.startsWith("unbind") ? "unbind" : operation);
+          return originals[i].apply(this, args);
+        };
+      });
+      try {
+        await within(currentConnection.deleteConfiguration(), CleanupTimeout, "deleteConfiguration");
+      } finally {
+        operations.forEach((operation, i) => {
+          prototype[operation] = originals[i];
+        });
+      }
+
+      // bindings first, then queues, then exchanges, each binding once
+      expect(calls).to.eql(["unbind", "unbind", "deleteQueue", "deleteExchange", "deleteExchange"]);
+      expect(await existsOnBroker("exchange", exchange1.name), exchange1.name).to.equal(false);
+      expect(await existsOnBroker("exchange", exchange2.name), exchange2.name).to.equal(false);
+      expect(await existsOnBroker("queue", queue.name), queue.name).to.equal(false);
     });
   });
 });
