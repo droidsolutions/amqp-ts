@@ -104,12 +104,13 @@ export async function restartBroker(): Promise<void> {
 
 /**
  * Polls the management API for the consumer tags registered on a queue (default vhost) until `predicate` accepts
- * them. The management stats lag by a few seconds, hence the generous default timeout.
+ * them. The management stats lag by a few seconds, hence the generous default timeout. It stays below the timeout of
+ * the reconnect tests, so a mismatch fails with its own message instead of a test timeout.
  */
 export async function waitForConsumerTags(
   queueName: string,
   predicate: (tags: string[]) => boolean,
-  timeoutMs = 20_000,
+  timeoutMs = 15_000,
 ): Promise<string[]> {
   const { base, headers } = getTarget();
   const deadline = Date.now() + timeoutMs;
