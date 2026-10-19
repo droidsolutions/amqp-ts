@@ -1185,5 +1185,76 @@ describe("Test amqp-ts module", function () {
       exchange.send(new Message("after-queue-delete"));
       await waitFor("after-queue-delete");
     });
+
+    it("keeps a binding whose other end is gone during a re-bind and restores it later", async function () {
+      // the broker deletes an autoDelete exchange together with the last queue bound to it
+      const exchange = currentConnection.declareExchange(nextExchangeName(), "fanout", { autoDelete: true });
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+      await queue.bind(exchange);
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      // the queue re-initializes after the consumer cancel, but cannot re-bind: the exchange is gone as well
+      const firstQueue = queue.initialized;
+      await deleteOnBroker("queue", queueName);
+      await replaced(() => queue.initialized, firstQueue);
+
+      // this one hits the 404 that makes the exchange re-initialize, which re-binds
+      const firstExchange = exchange.initialized;
+      exchange.send(new Message("into the void"));
+      await replaced(() => exchange.initialized, firstExchange);
+
+      exchange.send(new Message("after-both-deleted"));
+      await waitFor("after-both-deleted");
+    });
+
+    it("fails a noCreate queue whose consumer is cancelled because the queue is gone", async function () {
+      const queueName = nextQueueName();
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      try {
+        await (await raw.createChannel()).assertQueue(queueName);
+      } finally {
+        await raw.close();
+      }
+      const queue = currentConnection.declareQueue(queueName, { noCreate: true });
+      const model = currentConnection.getConnection;
+      const { consumer } = nextMessage(queue);
+      await consumer;
+
+      const first = queue.initialized;
+      await deleteOnBroker("queue", queueName);
+      await expect(replaced(() => queue.initialized, first)).to.be.rejectedWith("NOT-FOUND");
+      expect(currentConnection._queues[queueName], "the failed queue is no longer declared").to.equal(undefined);
+      expect(currentConnection.getConnection, "no reconnect of the whole connection").to.equal(model);
+    });
+
+    it("does not re-initialize again on a cancel right after the consumer was registered again", async function () {
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+      const { consumer } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const rawChannel = await raw.createChannel();
+        rawChannel.on("error", () => {});
+
+        const first = queue.initialized;
+        await rawChannel.deleteQueue(queueName);
+        await replaced(() => queue.initialized, first);
+        await queue._consumerInitialized;
+
+        // a second cancel within the loop window is left to the next reconnect
+        const recovered = queue.initialized;
+        await rawChannel.deleteQueue(queueName);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        expect(queue.initialized, "no second re-initialization").to.equal(recovered);
+      } finally {
+        await raw.close();
+      }
+    });
   });
 });

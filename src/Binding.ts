@@ -88,45 +88,53 @@ export class Binding {
   }
 
   /**
-   * Creates the binding again on a short-lived channel of the given model, then settles {@link initialized}. Unlike
+   * Creates the binding again on a short-lived channel of the given model, then resolves {@link initialized}. Unlike
    * {@link _initialize} it neither waits for source and destination nor uses the destination's channel: a failing
    * bind closes the channel it runs on, and closing the destination's channel would re-initialize it again.
+   *
+   * A failure is never final. The other end may be gone at this moment (for example an autoDelete exchange the broker
+   * removed together with the queue), so the binding stays declared and {@link initialized} stays pending until the
+   * other end re-initializes, which re-binds, or the next connect does. It also does not supersede a running
+   * {@link _initialize}, which may still be waiting for a freshly declared end.
    * @internal
    */
   public async _rebind(model: ChannelModel): Promise<void> {
-    const attempt = ++this._attempt;
     const destination = this._destination;
     const source = this._source;
+    const connection = destination.connection;
     this._invalidate();
     let channel: Channel | undefined;
     try {
       channel = await model.createChannel();
       channel.on("error", (err: Error) => {
-        this.log.warn({ err }, "Re-binding %s->%s failed: %s", source.name, destination.name, err.message);
+        this.log.debug({ err }, "Re-binding %s->%s failed: %s", source.name, destination.name, err.message);
       });
       if (destination instanceof Queue) {
         await channel.bindQueue(destination.name, source.name, this.pattern, this.args);
       } else {
         await channel.bindExchange(destination.name, source.name, this.pattern, this.args);
       }
-      if (attempt === this._attempt) {
+      if (!connection._isModelClosed(model) && connection._bindings[this.id] === this) {
         this._deferred.resolve(this);
       }
     } catch (err) {
-      if (attempt !== this._attempt) {
+      if (connection._isModelClosed(model)) {
+        // the next connect initializes it again, until then initialized stays pending
         return;
       }
-      if (destination.connection._isModelClosed(model)) {
-        // the next connect initializes it again, until then initialized stays pending
-        throw err;
-      }
-      this.log.error({ err }, "Failed to re-create binding (%s->%s)", source.name, destination.name);
-      delete destination.connection._bindings[Binding.id(destination, source, this.pattern)];
-      this._deferred.reject(err as Error);
-      throw err;
+      this.log.warn(
+        { err },
+        "Cannot re-create binding (%s->%s) yet, retrying when either end is declared again or on the next connect.",
+        source.name,
+        destination.name,
+      );
     } finally {
       channel?.close().catch(() => {});
     }
+  }
+
+  private get id(): string {
+    return Binding.id(this._destination, this._source, this.pattern);
   }
 
   /**
@@ -156,6 +164,9 @@ export class Binding {
       }
       if (attempt !== this._attempt) {
         return;
+      }
+      if (destination.connection._isModelClosed(model)) {
+        throw new Error("Connection closed while the binding was created");
       }
       this._deferred.resolve(this);
     } catch (err) {

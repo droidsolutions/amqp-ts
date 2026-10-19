@@ -181,9 +181,10 @@ export class Queue {
         if (attempt !== this._attempt) {
           return;
         }
-        if (this.connection._isModelClosed(model)) {
-          throw new Error("Connection closed while the bindings were restored");
-        }
+      }
+      // a reply and the connection's close can arrive together: never resolve on a closed connection
+      if (this.connection._isModelClosed(model)) {
+        throw new Error("Connection closed while the queue was initialized");
       }
       this._deferred.resolve(ok);
     } catch (err) {
@@ -207,6 +208,9 @@ export class Queue {
       const ok = await channel.consume(this._name, this._createConsumerWrapper(channel), this._consumerOptions);
       if (channel !== this._consumerChannel) {
         return;
+      }
+      if (this.connection._isModelClosed(model)) {
+        throw new Error("Connection closed while the consumer was registered");
       }
       this._consumerTag = ok.consumerTag;
       const recovered = this._cancelReinitGeneration !== undefined && this._cancelReinitGeneration === this._generation;

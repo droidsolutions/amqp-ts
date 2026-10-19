@@ -142,9 +142,10 @@ export class Exchange {
         if (attempt !== this._attempt) {
           return;
         }
-        if (this.connection._isModelClosed(model)) {
-          throw new Error("Connection closed while the bindings were restored");
-        }
+      }
+      // a reply and the connection's close can arrive together: never resolve on a closed connection
+      if (this.connection._isModelClosed(model)) {
+        throw new Error("Connection closed while the exchange was initialized");
       }
       this._deferred.resolve(ok as InitializeResult);
     } catch (err) {
