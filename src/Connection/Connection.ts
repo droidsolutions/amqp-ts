@@ -24,20 +24,25 @@ export class Connection extends EventEmitter {
   /**
    * The current underlying amqplib model, `undefined` while disconnected.
    * @internal
+   * @internal
    */
   public _model: ChannelModel | undefined;
   /**
    * Identifies the current underlying model. Changes on each successful connect, so entities can tell whether they
    * are initialized on the current connection.
    * @internal
+   * @internal
    */
   public _generation = 0;
+  /** @internal */
   public _exchanges: {
     [id: string]: Exchange;
   };
+  /** @internal */
   public _queues: {
     [id: string]: Queue;
   };
+  /** @internal */
   public _bindings: {
     [id: string]: Binding;
   };
@@ -109,6 +114,7 @@ export class Connection extends EventEmitter {
   /**
    * @internal A new deferred for an entity's promise. Once the connection was closed or recovery gave up nothing would
    * ever settle it, so it is rejected right away.
+   * @internal
    */
   public _createDeferred<T>(): Deferred<T> {
     const deferred = new Deferred<T>();
@@ -125,6 +131,7 @@ export class Connection extends EventEmitter {
    * The bindings of a failed exchange or queue can never be created any more, so they are rejected and removed as
    * well. A failure while the entity was declared again, in the setup after a reconnect or after its channel closed,
    * is also emitted as `error_connection`, because nobody awaits {@link initialized} then.
+   * @internal
    */
   public _onEntityFailed(
     entity: Exchange | Queue | Binding,
@@ -147,6 +154,7 @@ export class Connection extends EventEmitter {
    * @internal Emits `error_connection` for a failure while something was declared again: in the setup after a
    * reconnect (on that setup's model), or after a channel closed (`redeclared`). Nobody awaits the promises then, so
    * this is the only signal. Failures of a first declaration reject the promise their caller has instead.
+   * @internal
    */
   public _reportRecoveryFailure(err: Error, model: ChannelModel, redeclared: boolean): void {
     if (redeclared || (this._connectedBefore && model === this._setupModel)) {
@@ -155,6 +163,7 @@ export class Connection extends EventEmitter {
   }
 
   /** @internal Whether the given model has closed. */
+  /** @internal */
   public _isModelClosed(model: ChannelModel): boolean {
     return this._closedModels.has(model);
   }
@@ -162,6 +171,7 @@ export class Connection extends EventEmitter {
   /**
    * @internal Whether a channel of the given model may be re-created after it closed: the model is open, and it is
    * either the current one or the one `setup` is running for.
+   * @internal
    */
   public _isModelUsable(model: ChannelModel): boolean {
     return !this._isClosing && !this._closedModels.has(model) && (model === this._model || model === this._setupModel);
@@ -256,7 +266,7 @@ export class Connection extends EventEmitter {
     });
 
     this.log.debug("Initializing the topology on a new connection.");
-    await this._initializeEntities(model, generation);
+    await this._declareEntities(model, generation);
     if (this._closedModels.has(model)) {
       throw new Error("Connection closed while the topology was initialized");
     }
@@ -266,7 +276,7 @@ export class Connection extends EventEmitter {
    * Initializes every entity that is not initialized on the given generation yet: exchanges, then queues, then
    * bindings, then queue consumers. Entity failures are handled by the entities themselves.
    */
-  private async _initializeEntities(model: ChannelModel, generation: number): Promise<void> {
+  private async _declareEntities(model: ChannelModel, generation: number): Promise<void> {
     const settle = async (promises: Promise<void>[]): Promise<void> => {
       await Promise.allSettled(promises);
     };
@@ -284,7 +294,7 @@ export class Connection extends EventEmitter {
     this.isConnected = true;
 
     // entities declared while setup was running were not part of it
-    void this._initializeEntities(model, generation).then(() => {
+    void this._declareEntities(model, generation).then(() => {
       if (this._isClosing || this._model !== model) {
         return;
       }
@@ -507,6 +517,7 @@ export class Connection extends EventEmitter {
    * Increments an internal counter.
    * @param counter The counter to increase.
    * @param value The increment, default is 1.
+   * @internal
    */
   public _increaseCounter(counter: "receivedMessages" | "sentMessages", value = 1): void {
     switch (counter) {

@@ -17,6 +17,3 @@ export const ApplicationName =
       ? path.parse(process.argv[1]).name
       : path.basename(process.argv[1])
     : "amqpApp");
-
-// name for the RabbitMQ direct reply-to queue
-export const DIRECT_REPLY_TO_QUEUE = "amq.rabbitmq.reply-to";

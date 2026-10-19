@@ -2,7 +2,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import type { Channel, ChannelModel, ConsumeMessage, Options } from "amqplib";
 import type { AmqpProperties } from "../AmqpProperties.js";
-import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts.js";
 import { Binding } from "../Binding.js";
 import { Connection } from "../Connection/Connection.js";
 import type { Deferred } from "../Deferred.js";
@@ -26,10 +25,13 @@ export class Queue {
    */
   public initialized: Promise<InitializeResult>;
   /** The AMQP channel. */
+  /** @internal */
   public _channel: Channel;
   /** A promise that resolves when a consumer handler is registered and initialized. */
+  /** @internal */
   public _consumerInitialized: Promise<StartConsumerResult>;
   private _name: string;
+  /** @internal */
   _consumer: (msg: any, channel?: Channel) => any;
   private _consumerOptions: Options.Consume & { properties?: AmqpProperties };
   private _consumerTag: string;
@@ -79,7 +81,11 @@ export class Queue {
    * @param options Any queue declaring options.
    * @constructor
    */
-  constructor(public connection: Connection, name: string, private options: DeclarationOptions = {}) {
+  constructor(
+    public connection: Connection,
+    name: string,
+    private options: DeclarationOptions = {},
+  ) {
     this.log = this.connection.loggerFactory(this.constructor, { queue: name });
 
     this._name = name;
@@ -96,6 +102,7 @@ export class Queue {
    * Creates a channel on the given model and declares the queue on it, then settles {@link initialized}. Does nothing
    * if the queue was already initialized for the given generation. The consumer is started by
    * {@link _initializeConsumer}.
+   * @internal
    * @internal
    */
   public _initialize(model: ChannelModel, generation: number): Promise<void> {
@@ -114,6 +121,7 @@ export class Queue {
    * Replaces a settled {@link initialized} (and consumer promise) with a pending one, until the queue is initialized
    * again.
    * @internal
+   * @internal
    */
   public _invalidate(): void {
     this._readyChannel = undefined;
@@ -131,6 +139,7 @@ export class Queue {
    * Rejects {@link initialized} and the consumer promise if they are still pending. Used when the connection is closed
    * or recovery gave up.
    * @internal
+   * @internal
    */
   public _rejectPending(err: Error): void {
     if (!this._deferred.settled) {
@@ -144,6 +153,7 @@ export class Queue {
   /**
    * Registers the consumer, if there is one, on the channel the queue is declared on, unless it already is
    * registered there.
+   * @internal
    * @internal
    */
   public _initializeConsumer(redeclared = false): Promise<void> {
@@ -286,39 +296,6 @@ export class Queue {
    */
   public send(message: Message): void {
     message.sendTo(this);
-  }
-
-  rpc(requestParameters: any): Promise<Message> {
-    return new Promise<Message>((resolve, reject) => {
-      const processRpc = (): void => {
-        let consumerTag: string;
-        this._channel
-          .consume(
-            DIRECT_REPLY_TO_QUEUE,
-            (resultMsg) => {
-              this._channel.cancel(consumerTag).catch(() => {});
-              const result = new Message(resultMsg.content, resultMsg.properties);
-              result.fields = resultMsg.fields;
-              resolve(result);
-            },
-            { noAck: true },
-          )
-          .then(
-            (ok) => {
-              // send the rpc request
-              consumerTag = ok.consumerTag;
-              const message = new Message(requestParameters, {
-                replyTo: DIRECT_REPLY_TO_QUEUE,
-              });
-              message.sendTo(this);
-            },
-            /* istanbul ignore next */ (err: Error) => {
-              reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
-            },
-          );
-      };
-      this.initialized.then(processRpc, (err: Error) => reject(err));
-    });
   }
 
   /**

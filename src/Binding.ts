@@ -37,7 +37,9 @@ export class Binding {
    * the connection is closed or recovery gives up while it is pending.
    */
   public initialized: Promise<Binding>;
+  /** @internal */
   public _source: Exchange;
+  /** @internal */
   public _destination: Exchange | Queue;
   private log: SimpleLogger;
   private _deferred: Deferred<Binding>;
@@ -47,7 +49,12 @@ export class Binding {
   /** Changes with every initialization, so a superseded one can tell. */
   private _attempt = 0;
 
-  constructor(destination: Exchange | Queue, source: Exchange, private pattern = "", private args: any = {}) {
+  constructor(
+    destination: Exchange | Queue,
+    source: Exchange,
+    private pattern = "",
+    private args: any = {},
+  ) {
     this.log = destination.connection.loggerFactory(this.constructor);
     this._source = source;
     this._destination = destination;
@@ -66,6 +73,7 @@ export class Binding {
    * generation, then settles {@link initialized}. Does nothing if the binding was already initialized for the given
    * generation.
    * @internal
+   * @internal
    */
   public _initialize(model: ChannelModel, generation: number): Promise<void> {
     if (this._generation !== generation) {
@@ -79,6 +87,7 @@ export class Binding {
    * Creates every binding from or to the given entity again. Used after the entity's channel closed and the entity
    * was declared again, because a broker-side delete of an exchange or queue removes its bindings as well. Never
    * rejects, every binding handles its own failure.
+   * @internal
    * @internal
    */
   public static async _rebindContaining(connectionPoint: Exchange | Queue, model: ChannelModel): Promise<void> {
@@ -100,6 +109,7 @@ export class Binding {
    *
    * A binding that was deleted or replaced by binding the same pair again meanwhile is settled right away, since
    * nothing would create it again.
+   * @internal
    * @internal
    */
   public async _rebind(model: ChannelModel): Promise<void> {
@@ -155,6 +165,7 @@ export class Binding {
   /**
    * Replaces a settled {@link initialized} with a pending one, until the binding is created again.
    * @internal
+   * @internal
    */
   public _invalidate(): void {
     if (this._deferred.settled) {
@@ -166,6 +177,7 @@ export class Binding {
   /**
    * Rejects {@link initialized} if it is still pending. Used when the connection is closed, recovery gave up or an end
    * of the binding failed.
+   * @internal
    * @internal
    */
   public _rejectPending(err: Error): void {

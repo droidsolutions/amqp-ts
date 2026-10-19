@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import type { Channel, ChannelModel, Options } from "amqplib";
 import * as os from "node:os";
-import { ApplicationName, DIRECT_REPLY_TO_QUEUE } from "../amqp-ts.js";
+import { ApplicationName } from "../amqp-ts.js";
 import { Binding } from "../Binding.js";
 import { Connection } from "../Connection/Connection.js";
 import type { Deferred } from "../Deferred.js";
@@ -22,6 +21,7 @@ export class Exchange {
    */
   public initialized: Promise<InitializeResult>;
   /** The underlying AMQP channel. */
+  /** @internal */
   public _channel: Channel;
   /** Gets the name of the exchange. */
   public get name(): string {
@@ -32,8 +32,6 @@ export class Exchange {
     return this._type;
   }
 
-  private _consumer_handlers: Array<[string, any]> = new Array<[string, any]>();
-  private _isConsumerInitializedRcp = false;
   private _name: string;
   private _type: ExchangeType;
   private _deleting: Promise<void>;
@@ -83,6 +81,7 @@ export class Exchange {
    * Creates a channel on the given model and declares the exchange on it, then settles {@link initialized}. Does
    * nothing if the exchange was already initialized for the given generation.
    * @internal
+   * @internal
    */
   public _initialize(model: ChannelModel, generation: number): Promise<void> {
     if (this.connection._exchanges[this._name] !== this) {
@@ -99,6 +98,7 @@ export class Exchange {
   /**
    * Replaces a settled {@link initialized} with a pending one, until the exchange is initialized again.
    * @internal
+   * @internal
    */
   public _invalidate(): void {
     this._readyChannel = undefined;
@@ -110,6 +110,7 @@ export class Exchange {
 
   /**
    * Rejects {@link initialized} if it is still pending. Used when the connection is closed or recovery gave up.
+   * @internal
    * @internal
    */
   public _rejectPending(err: Error): void {
@@ -208,63 +209,6 @@ export class Exchange {
    */
   public send(message: Message, routingKey = ""): void {
     message.sendTo(this, routingKey);
-  }
-
-  public rpc(requestParameters: any, routingKey = "", callback?: (err, message: Message) => void): Promise<Message> {
-    return new Promise<Message>((resolve, reject) => {
-      function generateUuid(): string {
-        return Math.random().toString() + Math.random().toString() + Math.random().toString();
-      }
-      const processRpc = (): void => {
-        const uuid: string = generateUuid();
-        if (!this._isConsumerInitializedRcp) {
-          this._isConsumerInitializedRcp = true;
-          this._channel
-            .consume(
-              DIRECT_REPLY_TO_QUEUE,
-              (resultMsg) => {
-                const result = new Message(resultMsg.content, resultMsg.properties);
-                result.fields = resultMsg.fields;
-                for (const handler of this._consumer_handlers) {
-                  if (handler[0] === resultMsg.properties.correlationId) {
-                    const func: () => void = handler[1];
-                    func.apply("", [undefined, result]);
-                  }
-                }
-                resolve(result);
-              },
-              { noAck: true },
-            )
-            .then(
-              (_ok) => {
-                if (callback) {
-                  // send the rpc request
-                  this._consumer_handlers.push([uuid, callback]);
-                }
-                // consumerTag = ok.consumerTag;
-                const message = new Message(requestParameters, {
-                  correlationId: uuid,
-                  replyTo: DIRECT_REPLY_TO_QUEUE,
-                });
-                message.sendTo(this, routingKey);
-              },
-              /* istanbul ignore next */ (err: Error) => {
-                reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
-              },
-            );
-        } else {
-          this._consumer_handlers.push([uuid, callback]);
-          const message = new Message(requestParameters, {
-            correlationId: uuid,
-            replyTo: DIRECT_REPLY_TO_QUEUE,
-          });
-          message.sendTo(this, routingKey);
-          resolve(message);
-        }
-      };
-
-      this.initialized.then(processRpc, (err: Error) => reject(err));
-    });
   }
 
   /**

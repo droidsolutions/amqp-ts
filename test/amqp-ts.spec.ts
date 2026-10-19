@@ -11,6 +11,7 @@ import type { Binding } from "../src/Binding.js";
 import { Connection } from "../src/Connection/Connection.js";
 import { Topology } from "../src/Connection/Topology.js";
 import { LoggerFactory, SimpleLogger } from "../src/LoggerFactory.js";
+import { Exchange } from "../src/Exchange/Exchange.js";
 import { Message } from "../src/Message.js";
 import { Queue } from "../src/Queue/Queue.js";
 import { killConnections, uniqueConnectionName, waitForConsumerTags } from "./helpers/broker.js";
@@ -722,65 +723,88 @@ describe("Test amqp-ts module", function () {
       expect(result.messageCount).equals(0);
     });
 
-    it("should process a queue rpc", async function () {
-      // test code
-      const queue = currentConnection.declareQueue(nextQueueName());
+    /** Declares a reply queue and resolves with the first message it receives. */
+    async function replyTo(): Promise<{ name: string; reply: Promise<Message> }> {
+      const replyQueue = currentConnection.declareQueue(nextQueueName());
+      const reply = new Promise<Message>((resolve) => {
+        void replyQueue.activateConsumer(
+          (message: Message) => {
+            resolve(message);
+          },
+          { noAck: true },
+        );
+      });
+      await replyQueue.initialized;
+      return { name: replyQueue.name, reply };
+    }
 
+    it("should reply automatically with a plain value from the consumer", async function () {
+      const queue = currentConnection.declareQueue(nextQueueName());
       await queue.activateConsumer((message: Message) => {
         return (message.getContent() as Record<string, unknown>).reply;
       });
-
+      const { name, reply } = await replyTo();
       await currentConnection.completeConfiguration();
 
-      const result = await queue.rpc({ reply: "TestRpc" });
+      queue.send(new Message({ reply: "TestRpc" }, { replyTo: name, correlationId: "plain-1" }));
+      const result = await reply;
 
       expect(result.getContent()).equals("TestRpc");
+      expect(result.properties.correlationId).equals("plain-1");
     });
 
-    it("should process an unresolved queue rpc, consumer returning Message", async function () {
-      // test code
+    it("should reply automatically with a Message returned by the consumer", async function () {
       const queue = currentConnection.declareQueue(nextQueueName());
-
       await queue.activateConsumer((message: Message) => {
         return new Message((message.getContent() as Record<string, unknown>).reply);
       });
+      const { name, reply } = await replyTo();
+      await currentConnection.completeConfiguration();
 
-      const result = await queue.rpc({ reply: "TestRpc" });
+      queue.send(new Message({ reply: "TestRpc" }, { replyTo: name, correlationId: "message-1" }));
+      const result = await reply;
 
       expect(result.getContent()).equals("TestRpc");
+      expect(result.properties.correlationId).equals("message-1");
     });
 
-    it("should process a queue rpc, consumer returning Promise", async function () {
-      // test code
+    it("should reply automatically with the value a consumer's Promise resolves to", async function () {
       const queue = currentConnection.declareQueue(nextQueueName());
-
       await queue.activateConsumer((message: Message) => {
-        return new Promise((resolve, _reject) => {
+        return new Promise((resolve) => {
           setTimeout(() => {
             resolve((message.getContent() as Record<string, unknown>).reply);
           }, 10);
         });
       });
-
+      const { name, reply } = await replyTo();
       await currentConnection.completeConfiguration();
-      const result = await queue.rpc({ reply: "TestRpc" });
+
+      queue.send(new Message({ reply: "TestRpc" }, { replyTo: name, correlationId: "promise-1" }));
+      const result = await reply;
 
       expect(result.getContent()).equals("TestRpc");
+      expect(result.properties.correlationId).equals("promise-1");
     });
 
-    // skip until we know why it is hanging
-    it("should process an exchange rpc", async function () {
-      // test code
+    it("should reply automatically for a consumer on an exchange", async function () {
       const exchange = currentConnection.declareExchange(nextExchangeName());
-
       await exchange.activateConsumer((message: Message) => {
         return (message.getContent() as Record<string, unknown>).reply;
       });
-
+      const { name, reply } = await replyTo();
       await currentConnection.completeConfiguration();
-      const result = await exchange.rpc({ reply: "TestRpc" });
+
+      exchange.send(new Message({ reply: "TestRpc" }, { replyTo: name, correlationId: "exchange-1" }));
+      const result = await reply;
 
       expect(result.getContent()).equals("TestRpc");
+      expect(result.properties.correlationId).equals("exchange-1");
+    });
+
+    it("exposes no rpc method", function () {
+      expect("rpc" in Exchange.prototype).to.equal(false);
+      expect("rpc" in Queue.prototype).to.equal(false);
     });
 
     it("should create a topology and send and receive a Message", async function () {
@@ -1381,9 +1405,6 @@ describe("Test amqp-ts module", function () {
         queue.prefetch(1);
         queue.send(new Message("to the queue"));
         exchange.send(new Message("to the exchange"));
-        // an rpc's own promise is the caller's to handle, its internal chain is not
-        queue.rpc("queue rpc").catch(() => {});
-        exchange.rpc("exchange rpc").catch(() => {});
         const pending: Promise<unknown>[] = [
           connection.initialized,
           exchange.initialized,
