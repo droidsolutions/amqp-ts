@@ -3,7 +3,6 @@ import { Connection, Message } from "@droidsolutions-oss/amqp-ts";
 
 const url = process.env.AMQP_URL ?? "amqp://localhost";
 
-
 const connection = new Connection(url);
 
 // the queue the server sends its answers to, exclusive to this connection and deleted when it closes

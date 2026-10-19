@@ -2,7 +2,6 @@ import { Connection } from "@droidsolutions-oss/amqp-ts";
 
 const url = process.env.AMQP_URL ?? "amqp://localhost";
 
-
 const keys = process.argv.slice(2);
 if (keys.length === 0) {
   console.log("Usage: receive_logs_topic.mjs <facility>.<severity>");

@@ -2,7 +2,6 @@ import { Connection, Message } from "@droidsolutions-oss/amqp-ts";
 
 const url = process.env.AMQP_URL ?? "amqp://localhost";
 
-
 const connection = new Connection(url);
 
 // declare a new queue, it will be created if it does not already exist

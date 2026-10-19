@@ -55,8 +55,6 @@ export default defineConfig([
     },
 
     rules: {
-      // the plugin cannot resolve the "amqplib/callback_api" subpath, which only exists through the exports map
-      "n/no-missing-import": ["error", { allowModules: ["amqplib"] }],
       "comma-dangle": ["error", "always-multiline"],
       "dot-notation": ["error"],
       "max-classes-per-file": ["error", 1],
@@ -97,21 +95,20 @@ export default defineConfig([
       "@typescript-eslint/no-floating-promises": ["off"],
     },
   },
-  globalIgnores(["**/coverage", "**/lib", "test/__test", "tutorials/**", "test/cjs-smoke.cjs"]),
+  globalIgnores(["**/coverage", "**/lib", "test/__test", "test/cjs-smoke.cjs"]),
   {
-    files: ["tutorials/**/**"],
-
+    // the examples are plain JavaScript outside the TypeScript project, so they are linted without type information
+    files: ["tutorials/**/*.mjs"],
+    extends: [typescriptEslint.configs["flat/disable-type-checked"]],
+    languageOptions: {
+      ecmaVersion: "latest",
+    },
     rules: {
-      "no-var-requires": "off",
       "no-console": "off",
-      "@typescript-eslint/no-var-requires": "off",
-      "@typescript-eslint/explicit-function-return-type": "off",
-      "@typescript-eslint/no-unsafe-assignment": "off",
-      "@typescript-eslint/no-unsafe-call": "off",
-      "@typescript-eslint/no-unsafe-member-access": "off",
-      "@typescript-eslint/no-unsafe-return": "off",
-      "@typescript-eslint/restrict-plus-operands": "off",
-      "no-undef": "off",
+      // command line examples exit with a usage message, as the RabbitMQ originals do
+      "n/no-process-exit": "off",
+      // the package's own name resolves to lib/, which only exists after a build
+      "n/no-missing-import": ["error", { allowModules: ["@droidsolutions-oss/amqp-ts"] }],
     },
   },
   {

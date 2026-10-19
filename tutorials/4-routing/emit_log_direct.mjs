@@ -2,7 +2,6 @@ import { Connection, Message } from "@droidsolutions-oss/amqp-ts";
 
 const url = process.env.AMQP_URL ?? "amqp://localhost";
 
-
 const connection = new Connection(url);
 
 const exchange = connection.declareExchange("direct_logs", "direct", { durable: false });

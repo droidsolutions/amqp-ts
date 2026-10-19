@@ -2,7 +2,6 @@ import { Connection } from "@droidsolutions-oss/amqp-ts";
 
 const url = process.env.AMQP_URL ?? "amqp://localhost";
 
-
 const connection = new Connection(url);
 
 const queue = connection.declareQueue("rpc_queue", { durable: false });
