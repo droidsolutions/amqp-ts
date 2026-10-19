@@ -68,6 +68,11 @@ jobs:
         run: npm i -g npm@11
       - run: npm ci --ignore-scripts
       - run: npm run test:coverage
+      - name: Run integration tests
+        if: matrix.node == '24'
+        run: npm run test:integration
+        env:
+          AMQPTEST_RESTART_CMD: docker restart ${{ job.services.rabbitmq.id }}
 
   release:
     name: Semantic Release

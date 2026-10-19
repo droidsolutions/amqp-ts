@@ -4,11 +4,9 @@
  * Created by Ab on 2015-10-21.
  */
 import { expect } from "chai";
-import { exec, execSync } from "node:child_process";
-import { platform } from "node:os";
-import { pino } from "pino";
 import { Connection } from "../src/Connection/Connection.js";
 import { Message } from "../src/Message.js";
+import { restartBroker } from "./helpers/broker.js";
 
 /**
  * Test using a local rabbitmq instance
@@ -16,49 +14,6 @@ import { Message } from "../src/Message.js";
 // define test defaults
 const ConnectionUrl = process.env.AMQPTEST_CONNECTION_URL || "amqp://localhost";
 const UnitTestLongTimeout = process.env.AMQPTEST_LONG_TIMEOUT || 60000;
-const LogLevel = process.env.AMQPTEST_LOGLEVEL || "silent";
-
-// needed for server restart tests
-const isWin = platform().startsWith("win");
-
-const logger = pino({
-  name: "amqp-ts integration-test",
-  level: LogLevel,
-  formatters: {
-    level: (label: string, _number: number) => {
-      return { level: label };
-    },
-  },
-  transport: { target: "pino-pretty", options: { ignore: "hostname" } },
-  redact: [],
-  serializers: { err: pino.stdSerializers.err },
-});
-
-/* istanbul ignore next */
-function restartAmqpServer() {
-  "use strict";
-  // windows only code
-  console.log("shutdown and restart rabbitmq");
-  if (isWin) {
-    try {
-      execSync("net stop rabbitmq");
-      exec("net start rabbitmq");
-    } catch (err) {
-      logger.error(
-        { err },
-        "Unable to shutdown and restart RabbitMQ, possible solution: use elevated permissions (start an admin shell)",
-      );
-      throw new Error(`Unable to restart rabbitmq, error:\\n${(err as Error).message}`, { cause: err });
-    }
-  } else {
-    try {
-      execSync("./tools/restart-rabbit.sh");
-    } catch (err) {
-      logger.error({ err }, "Unable to shutdown and restart RabbitMQ");
-      throw new Error("Unable to restart rabbitmq, error:\n" + (err as Error).message, { cause: err });
-    }
-  }
-}
 
 /* istanbul ignore next */
 describe("AMQP Connection class automatic reconnection", function () {
@@ -100,11 +55,9 @@ describe("AMQP Connection class automatic reconnection", function () {
         { noAck: true },
       )
       .then(() => {
-        restartAmqpServer();
-        setTimeout(() => {
-          const msg = new Message("Test");
-          queue.send(msg);
-        }, 1000);
+        return restartBroker().then(() => {
+          queue.send(new Message("Test"));
+        });
       })
       .catch((err) => {
         console.log("Consumer intialization FAILED!!!");
@@ -136,11 +89,9 @@ describe("AMQP Connection class automatic reconnection", function () {
         { noAck: true },
       )
       .then(() => {
-        restartAmqpServer();
-        setTimeout(() => {
-          const msg = new Message("Test");
-          queue.send(msg);
-        }, 1000);
+        return restartBroker().then(() => {
+          queue.send(new Message("Test"));
+        });
       })
       .catch((err) => {
         console.log("Consumer intialization FAILED!!!");

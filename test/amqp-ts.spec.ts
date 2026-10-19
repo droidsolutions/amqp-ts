@@ -6,11 +6,14 @@
 import * as AmqpLib from "amqplib";
 import { expect, use } from "chai";
 import chaiAsPromised from "chai-as-promised";
+import { once } from "node:events";
 import { pino } from "pino";
 import { Connection } from "../src/Connection/Connection.js";
 import { Topology } from "../src/Connection/Topology.js";
 import { LoggerFactory } from "../src/LoggerFactory.js";
 import { Message } from "../src/Message.js";
+import { Queue } from "../src/Queue/Queue.js";
+import { killConnections, uniqueConnectionName } from "./helpers/broker.js";
 
 /**
  * Until we get a good mock for amqplib we will test using a local rabbitmq instance
@@ -18,6 +21,7 @@ import { Message } from "../src/Message.js";
 // define test defaults
 const ConnectionUrl = process.env.AMQPTEST_CONNECTION_URL || "amqp://localhost";
 const UnitTestTimeout = process.env.AMQPTEST_TIMEOUT || 1500;
+const ReconnectTimeout = Number(process.env.AMQPTEST_RECONNECT_TIMEOUT || 20000);
 const LogLevel = process.env.AMQPTEST_LOGLEVEL || "silent";
 const testExchangeNamePrefix = process.env.AMQPTEST_EXCHANGE_PREFIX || "TestExchange_";
 const testQueueNamePrefix = process.env.AMQPTEST_QUEUE_PREFIX || "TestQueue_";
@@ -41,8 +45,16 @@ describe("Test amqp-ts module", function () {
 
   // keep track of the created connections for cleanup
   const connections: Connection[] = [];
+  let currentConnectionName: string;
   function getAmqpConnection() {
-    const conn = new Connection(ConnectionUrl, {}, { retries: 5, interval: 1500 }, loggerFactory);
+    // name the connection on the broker so tests can kill it through the management API
+    currentConnectionName = uniqueConnectionName();
+    const conn = new Connection(
+      ConnectionUrl,
+      { clientProperties: { connection_name: currentConnectionName } },
+      { retries: 5, interval: 1500 },
+      loggerFactory,
+    );
     connections.push(conn);
     return conn;
   }
@@ -429,6 +441,7 @@ describe("Test amqp-ts module", function () {
     });
 
     it("should reconnect when sending a Message to an Exchange after a broken connection", async function () {
+      this.timeout(ReconnectTimeout);
       const testPromise = new Promise((resolve) => {
         callbackResolve = resolve;
       });
@@ -447,23 +460,15 @@ describe("Test amqp-ts module", function () {
 
       await currentConnection.completeConfiguration();
 
-      await new Promise<void>((resolve, reject) => {
-        currentConnection.connection.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            // it should auto reconnect and send the message
-            const msg = new Message("Test");
-            exchange1.send(msg);
-            resolve();
-          }
-        });
-      });
+      // break the connection, it should auto reconnect and send the message
+      expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      exchange1.send(new Message("Test"));
 
       await expect(testPromise).to.eventually.equals("Test");
     });
 
     it("should reconnect when sending a message to a Queue after a broken connection", async function () {
+      this.timeout(ReconnectTimeout);
       // test code
       const queue = currentConnection.declareQueue(nextQueueName());
       const testPromise = new Promise((resolve) => {
@@ -478,19 +483,9 @@ describe("Test amqp-ts module", function () {
 
       await currentConnection.completeConfiguration();
 
-      await new Promise<void>((resolve, reject) => {
-        // break connection
-        currentConnection.connection.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            // it should auto reconnect and send the message
-            const msg = new Message("Test");
-            queue.send(msg);
-            resolve();
-          }
-        });
-      });
+      // break the connection, it should auto reconnect and send the message
+      expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      queue.send(new Message("Test"));
 
       await expect(testPromise).to.eventually.equals("Test");
     });
@@ -929,6 +924,123 @@ describe("Test amqp-ts module", function () {
       const exchange = currentConnection.declareExchange(exchangeName, undefined, { noCreate: true });
       await exchange.initialized;
       await con.close();
+    });
+  });
+
+  describe("reconnect behaviour", function () {
+    this.timeout(ReconnectTimeout);
+
+    function nextMessage(queue: Queue, options: AmqpLib.Options.Consume = { noAck: true }) {
+      const received: string[] = [];
+      let notify: (() => void) | undefined;
+      const consumer = queue.activateConsumer((message: Message) => {
+        received.push(message.getContent() as string);
+        notify?.();
+      }, options);
+      const waitFor = async (content: string): Promise<void> => {
+        while (!received.includes(content)) {
+          await new Promise<void>((resolve) => {
+            notify = resolve;
+          });
+        }
+      };
+
+      return { consumer, waitFor, received };
+    }
+
+    it("consumer resumes after the broker kills the connection", async function () {
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      const reestablished = once(currentConnection, "re_established_connection");
+      expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      await reestablished;
+
+      queue.send(new Message("after-kill"));
+      await waitFor("after-kill");
+    });
+
+    it("message sent while disconnected is delivered after recovery", async function () {
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      // send immediately, before the library has noticed or recovered
+      queue.send(new Message("while-disconnected"));
+      await waitFor("while-disconnected");
+    });
+
+    it("rebuilds exchange to exchange to queue topology after a kill", async function () {
+      const exchange1 = currentConnection.declareExchange(nextExchangeName());
+      const exchange2 = currentConnection.declareExchange(nextExchangeName());
+      const queue = currentConnection.declareQueue(nextQueueName());
+      await exchange2.bind(exchange1);
+      await queue.bind(exchange2);
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      const reestablished = once(currentConnection, "re_established_connection");
+      expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      await reestablished;
+
+      exchange1.send(new Message("through-topology"));
+      await waitFor("through-topology");
+    });
+
+    it("emits lost_connection before re_established_connection", async function () {
+      const queue = currentConnection.declareQueue(nextQueueName());
+      await currentConnection.completeConfiguration();
+
+      const events: string[] = [];
+      currentConnection.on("lost_connection", () => events.push("lost_connection"));
+      currentConnection.on("re_established_connection", () => events.push("re_established_connection"));
+      const reestablished = once(currentConnection, "re_established_connection");
+      expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      await reestablished;
+
+      expect(events).to.eql(["lost_connection", "re_established_connection"]);
+      await queue.initialized;
+    });
+
+    it("consumer resumes after its channel is closed by a double ack", async function () {
+      const queue = currentConnection.declareQueue(nextQueueName());
+      let first = true;
+      const received: string[] = [];
+      let notify: (() => void) | undefined;
+      await queue.activateConsumer(
+        (message) => {
+          received.push(message.getContent() as string);
+          message.ack();
+          if (first) {
+            first = false;
+            // acking the same delivery twice makes the broker close this channel with 406 PRECONDITION_FAILED
+            message.ack();
+          }
+          notify?.();
+        },
+        { noAck: false },
+      );
+      await currentConnection.completeConfiguration();
+
+      queue.send(new Message("first"));
+      while (!received.includes("first")) {
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+      }
+      // give the broker time to close the channel, then check the library recovers the consumer
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      queue.send(new Message("second"));
+      while (!received.includes("second")) {
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+      }
     });
   });
 });

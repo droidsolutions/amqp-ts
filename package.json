@@ -26,6 +26,7 @@
     "build:clean": "npm run clean && npm run build",
     "prepare": "husky install",
     "test": "mocha test/*.spec.ts",
+    "test:integration": "mocha test/*.spec-i.ts",
     "test:coverage": "nyc mocha test/*.spec.ts",
     "test:cjs": "node test/cjs-smoke.cjs",
     "test:release-config": "node --test test/release-config.test.mjs"
