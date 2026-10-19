@@ -97,7 +97,7 @@ export default defineConfig([
       "@typescript-eslint/no-floating-promises": ["off"],
     },
   },
-  globalIgnores(["**/coverage", "**/lib", "test/__test", "tutorials/**/*.js", "test/cjs-smoke.cjs"]),
+  globalIgnores(["**/coverage", "**/lib", "test/__test", "tutorials/**", "test/cjs-smoke.cjs"]),
   {
     files: ["tutorials/**/**"],
 
