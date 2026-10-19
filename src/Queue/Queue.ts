@@ -130,13 +130,16 @@ export class Queue {
 
   /**
    * Replaces a settled {@link initialized} (and consumer promise) with a pending one, until the queue is initialized
-   * again.
+   * again. When only the channel closed (`connectionLost` false), a consumer the broker refused on this connection
+   * keeps its rejected promise: it is not registered again before the next reconnect, so a pending one would never
+   * settle until then.
    * @internal
    */
-  public _invalidate(): void {
+  public _invalidate(connectionLost = true): void {
     this._readyChannel = undefined;
     this._pendInitialized();
-    if (this._consumerDeferred?.settled) {
+    const refused = this._consumerRefusedIn !== undefined && this._consumerRefusedIn === this._generation;
+    if (this._consumerDeferred?.settled && (connectionLost || !refused)) {
       this._consumerDeferred = this.connection._createDeferred<StartConsumerResult>();
       this._consumerInitialized = this._consumerDeferred.promise;
     }
@@ -348,7 +351,7 @@ export class Queue {
     // a consumer registration that the broker refused closes the channel as well; retrying it would loop
     const consumeFailed = channel === this._consumerChannel && this._consumerDeferred?.settled === false;
     const generation = this._generation;
-    this._invalidate();
+    this._invalidate(false);
     // the connection emits its own close right after closing its channels, so look at it once that happened
     queueMicrotask(() => {
       if (!this.connection._isModelUsable(model) || this._generation !== generation) {

@@ -1936,6 +1936,42 @@ describe("Test amqp-ts module", function () {
       }
     });
 
+    it("keeps a refused consumer rejected when its queue's channel is repaired", async function () {
+      const queueName = nextQueueName();
+      // another connection holds an exclusive consumer, so the broker refuses ours with 403
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const channel = await raw.createChannel();
+        await channel.assertQueue(queueName);
+        await channel.consume(queueName, () => {}, { exclusive: true });
+
+        const queue = currentConnection.declareQueue(queueName);
+        await expect(
+          within(
+            queue.activateConsumer(() => {}),
+            5000,
+            "the consumer",
+          ),
+        ).to.be.rejectedWith("403");
+        await currentConnection.initialized;
+        await sleep(300);
+        await queue.initialized;
+
+        // the queue's channel closes for another reason (404 on a passive declare) and is repaired
+        const first = queue.initialized;
+        queue._channel.checkQueue(nextQueueName()).catch(() => {});
+        await replaced(() => queue.initialized, first);
+
+        await expect(
+          within(currentConnection.completeConfiguration(), 2000, "completeConfiguration"),
+        ).to.be.rejectedWith("403");
+        await within(queue.stopConsumer(), 2000, "stopConsumer");
+      } finally {
+        await raw.close();
+        await deleteOnBroker("queue", queueName);
+      }
+    });
+
     it("requeues a message delivered to a consumer that was stopped meanwhile", function () {
       const queue = currentConnection.declareQueue(nextQueueName());
       const requeued: boolean[] = [];
