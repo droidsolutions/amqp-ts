@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 /**
  * Tests for amqp-ts
  * Created by Ab on 2015-09-16.
@@ -45,8 +44,6 @@ describe("Test amqp-ts module", function () {
     return testQueueNamePrefix + testQueueNumber.toString();
   }
 
-  // keep track of the created connections for cleanup
-  const connections: Connection[] = [];
   let currentConnectionName: string;
   function getAmqpConnection() {
     // name the connection on the broker so tests can kill it through the management API
@@ -57,7 +54,6 @@ describe("Test amqp-ts module", function () {
       { maxRetries: 5, initialDelay: 100 },
       loggerFactory,
     );
-    connections.push(conn);
     return conn;
   }
 
@@ -118,17 +114,6 @@ describe("Test amqp-ts module", function () {
     this.timeout(3 * CleanupTimeout);
     // a test may leave its topology in a state that cannot be deleted any more, which must not fail the next test
     await cleanup(currentConnection).catch(() => {});
-  });
-
-  // cleanup failed tests
-  // unfortunately does still not execute after encountering an error in mocha, perhaps in future versions
-  after(async function () {
-    this.timeout(3 * CleanupTimeout);
-    console.log("cleanup phase!");
-    // the connections are closed by now, so this only removes what is left and must not fail the run
-    await Promise.allSettled(
-      connections.map((connection) => within(connection.deleteConfiguration(), CleanupTimeout, "deleteConfiguration")),
-    );
   });
 
   describe("AMQP Connection class initialization", function () {
@@ -1012,11 +997,16 @@ describe("Test amqp-ts module", function () {
 
     /** A logger factory whose loggers record level and message template of every entry. */
     function recordingLoggerFactory() {
-      const entries: { level: string; msg: string }[] = [];
+      const entries: { level: string; msg: string; args: unknown[] }[] = [];
       const record =
         (level: string) =>
-        (objOrMsg: Record<string, unknown> | string, msg?: string): void => {
-          entries.push({ level, msg: typeof objOrMsg === "string" ? objOrMsg : (msg ?? "") });
+        (objOrMsg: Record<string, unknown> | string, ...rest: unknown[]): void => {
+          if (typeof objOrMsg === "string") {
+            entries.push({ level, msg: objOrMsg, args: rest });
+          } else {
+            const [msg = "", ...args] = rest;
+            entries.push({ level, msg: typeof msg === "string" ? msg : "", args });
+          }
         };
       const logger: SimpleLogger = {
         trace: record("trace"),
@@ -1327,6 +1317,8 @@ describe("Test amqp-ts module", function () {
       const reestablished = once(currentConnection, "re_established_connection");
       expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
       await reestablished;
+      let retries = 0;
+      currentConnection.on("trying_connect", () => retries++);
 
       expect(errors, "one error_connection for the failing queue").to.have.length(1);
       expect(errors[0].message).to.contain("404");
@@ -1338,6 +1330,7 @@ describe("Test amqp-ts module", function () {
       // a setup that threw for the failing queue would reconnect again and again
       await new Promise((resolve) => setTimeout(resolve, 2000));
       expect(lost, "no reconnect loop").to.equal(1);
+      expect(retries, "no failed setup that is retried").to.equal(0);
     });
 
     it("drops buffered sends when recovery gives up", async function () {
@@ -1353,6 +1346,9 @@ describe("Test amqp-ts module", function () {
         await new Promise((resolve) => setTimeout(resolve, 100));
         const dropped = entries.filter((entry) => entry.level === "warn" && entry.msg.startsWith("Dropping message"));
         expect(dropped, "one warn entry for the dropped message").to.have.length(1);
+        // the give-up error can be an AggregateError without a message of its own
+        const reason = dropped[0].args[1];
+        expect(reason, "the reason for dropping it").to.be.a("string").and.not.equal("");
       } finally {
         await connection.close();
       }
@@ -1503,19 +1499,56 @@ describe("Test amqp-ts module", function () {
       await waitFor("after-replace");
     });
 
+    it("reports a consumer that cannot be registered again during setup", async function () {
+      const queueName = nextQueueName();
+      // another connection holds an exclusive consumer, so the broker refuses ours with 403
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const rawChannel = await raw.createChannel();
+        await rawChannel.assertQueue(queueName);
+        await rawChannel.consume(queueName, () => {}, { exclusive: true });
+
+        const queue = currentConnection.declareQueue(queueName);
+        // the first registration only rejects the consumer promise, its caller handles that
+        await expect(queue.activateConsumer(() => {})).to.be.rejectedWith("403");
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await queue.initialized;
+
+        const errors: Error[] = [];
+        currentConnection.on("error_connection", (err: Error) => errors.push(err));
+        const lost = once(currentConnection, "lost_connection");
+        const reestablished = once(currentConnection, "re_established_connection");
+        expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+        await lost;
+        const consumer = queue._consumerInitialized;
+        await reestablished;
+
+        await expect(within(consumer, 2000, "the consumer promise")).to.be.rejectedWith("403");
+        expect(errors, "one error_connection for the consumer").to.have.length(1);
+        expect(errors[0].message).to.contain("403");
+      } finally {
+        await raw.close();
+        // the queue's consumer failed, so the cleanup cannot delete it
+        await deleteOnBroker("queue", queueName);
+      }
+    });
+
     it("keeps recovering when a connection event listener throws", async function () {
       await currentConnection.completeConfiguration();
       const unhandled = collectUnhandledRejections();
       try {
-        const reestablished = once(currentConnection, "re_established_connection");
         const thrower = (): never => {
           throw new Error("listener failure");
         };
         currentConnection.on("lost_connection", thrower);
         currentConnection.on("trying_connect", thrower);
         currentConnection.on("re_established_connection", thrower);
+        // listeners registered after a throwing one still get the events
+        const lost = once(currentConnection, "lost_connection");
+        const reestablished = once(currentConnection, "re_established_connection");
         expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
 
+        await within(lost, 10_000, "lost_connection");
         await within(reestablished, 10_000, "re_established_connection");
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(unhandled.reasons).to.eql([]);
