@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import * as AmqpLib from "amqplib/callback_api";
-import * as os from "os";
-import { ApplicationName, DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
-import { Binding } from "../Binding";
-import { Connection } from "../Connection/Connection";
-import { SimpleLogger } from "../LoggerFactory";
-import { Message } from "../Message";
-import { DeclarationOptions } from "./DeclarationOptions";
-import { ExchangeType } from "./ExchangeType";
-import { InitializeResult } from "./InitializeResult";
+import * as AmqpLib from "amqplib/callback_api.js";
+import * as os from "node:os";
+import { ApplicationName, DIRECT_REPLY_TO_QUEUE } from "../amqp-ts.js";
+import { Binding } from "../Binding.js";
+import { Connection } from "../Connection/Connection.js";
+import { SimpleLogger } from "../LoggerFactory.js";
+import { Message } from "../Message.js";
+import { DeclarationOptions } from "./DeclarationOptions.js";
+import { ExchangeType } from "./ExchangeType.js";
+import { InitializeResult } from "./InitializeResult.js";
 
 /**
  * Represents an exchange.

@@ -2,11 +2,11 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "rootDir": "../",
-    "outDir": "__test",
-    "module": "commonjs",
-    "incremental": true,
+    "noEmit": true,
+    "skipLibCheck": true,
     "noUnusedLocals": false,
-    "types": ["mocha"]
+    "types": ["node", "mocha"]
   },
+  "include": ["./*.ts"],
   "exclude": ["__test"]
 }

@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import * as AmqpLib from "amqplib/callback_api";
-import { AmqpProperties } from "./AmqpProperties";
-import { Exchange } from "./Exchange/Exchange";
-import { SimpleLogger } from "./LoggerFactory";
-import { Queue } from "./Queue/Queue";
+import * as AmqpLib from "amqplib/callback_api.js";
+import { AmqpProperties } from "./AmqpProperties.js";
+import { Exchange } from "./Exchange/Exchange.js";
+import { SimpleLogger } from "./LoggerFactory.js";
+import { Queue } from "./Queue/Queue.js";
 
 /**
  * Represents a message that can be send via AMQP.

@@ -1,17 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import * as AmqpLib from "amqplib/callback_api";
-import type { AmqpProperties } from "../AmqpProperties";
-import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
-import { Binding } from "../Binding";
-import { Connection } from "../Connection/Connection";
-import { Exchange } from "../Exchange/Exchange";
-import { SimpleLogger } from "../LoggerFactory";
-import { Message } from "../Message";
-import { DeclarationOptions } from "./DeclarationOptions";
-import { DeleteResult } from "./DeleteResult";
-import { InitializeResult } from "./InitializeResult";
-import { StartConsumerResult } from "./StartConsumerResult";
+import * as AmqpLib from "amqplib/callback_api.js";
+import type { AmqpProperties } from "../AmqpProperties.js";
+import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts.js";
+import { Binding } from "../Binding.js";
+import { Connection } from "../Connection/Connection.js";
+import { Exchange } from "../Exchange/Exchange.js";
+import { SimpleLogger } from "../LoggerFactory.js";
+import { Message } from "../Message.js";
+import { DeclarationOptions } from "./DeclarationOptions.js";
+import { DeleteResult } from "./DeleteResult.js";
+import { InitializeResult } from "./InitializeResult.js";
+import { StartConsumerResult } from "./StartConsumerResult.js";
 
 /** Represents an AQMP queue. */
 export class Queue {

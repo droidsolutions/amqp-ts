@@ -55,6 +55,8 @@ export default defineConfig([
     },
 
     rules: {
+      // the plugin cannot resolve the explicit "amqplib/callback_api.js" subpath, which Node ESM requires
+      "n/no-missing-import": ["error", { allowModules: ["amqplib"] }],
       "comma-dangle": ["error", "always-multiline"],
       "dot-notation": ["error"],
       "max-classes-per-file": ["error", 1],
@@ -95,7 +97,7 @@ export default defineConfig([
       "@typescript-eslint/no-floating-promises": ["off"],
     },
   },
-  globalIgnores(["**/coverage", "**/lib", "test/__test", "tools/alive.js", "tutorials/**/*.js", "**/.eslintrc.js"]),
+  globalIgnores(["**/coverage", "**/lib", "test/__test", "tutorials/**/*.js", "test/cjs-smoke.cjs"]),
   {
     files: ["tutorials/**/**"],
 

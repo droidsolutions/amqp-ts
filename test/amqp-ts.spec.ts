@@ -4,19 +4,18 @@
  * Created by Ab on 2015-09-16.
  */
 import * as AmqpLib from "amqplib";
-import * as Chai from "chai";
-import * as chaiAsPromised from "chai-as-promised";
-import * as pino from "pino";
-import { Connection } from "../src/Connection/Connection";
-import { Topology } from "../src/Connection/Topology";
-import { LoggerFactory } from "../src/LoggerFactory";
-import { Message } from "../src/Message";
+import { expect, use } from "chai";
+import chaiAsPromised from "chai-as-promised";
+import { pino } from "pino";
+import { Connection } from "../src/Connection/Connection.js";
+import { Topology } from "../src/Connection/Topology.js";
+import { LoggerFactory } from "../src/LoggerFactory.js";
+import { Message } from "../src/Message.js";
 
 /**
  * Until we get a good mock for amqplib we will test using a local rabbitmq instance
  */
 // define test defaults
-const expect = Chai.expect;
 const ConnectionUrl = process.env.AMQPTEST_CONNECTION_URL || "amqp://localhost";
 const UnitTestTimeout = process.env.AMQPTEST_TIMEOUT || 1500;
 const LogLevel = process.env.AMQPTEST_LOGLEVEL || "silent";
@@ -69,7 +68,7 @@ describe("Test amqp-ts module", function () {
   let callbackResolve: (value?: any) => void;
 
   before(function () {
-    Chai.use(chaiAsPromised);
+    use(chaiAsPromised);
 
     if (LogLevel !== "silent") {
       const logger = pino({
@@ -80,7 +79,7 @@ describe("Test amqp-ts module", function () {
             return { level: label };
           },
         },
-        // prettyPrint: { ignore: "hostname" },
+        transport: { target: "pino-pretty", options: { ignore: "hostname" } },
         redact: [],
         serializers: { err: pino.stdSerializers.err },
       });

@@ -1,16 +1,14 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable no-console */
 /**
  * Integration tests for AmqpSimple
  * Created by Ab on 2015-10-21.
  */
-import * as Chai from "chai";
+import { expect } from "chai";
 import { exec, execSync } from "node:child_process";
 import { platform } from "node:os";
-import * as pino from "pino";
-import { Connection } from "../src/Connection/Connection";
-import { Message } from "../src/Message";
-const expect = Chai.expect;
+import { pino } from "pino";
+import { Connection } from "../src/Connection/Connection.js";
+import { Message } from "../src/Message.js";
 
 /**
  * Test using a local rabbitmq instance
@@ -31,7 +29,7 @@ const logger = pino({
       return { level: label };
     },
   },
-  prettyPrint: { ignore: "hostname" },
+  transport: { target: "pino-pretty", options: { ignore: "hostname" } },
   redact: [],
   serializers: { err: pino.stdSerializers.err },
 });

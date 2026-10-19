@@ -7,7 +7,7 @@
 
 // simplified use of amqp exchanges and queues, wrapper for amqplib
 
-import * as path from "path";
+import path from "node:path";
 
 /** Name of the current application determined by AMQP_APPLICATIONNAME env or the name of the dir we're running in. */
 export const ApplicationName =

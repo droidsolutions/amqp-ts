@@ -1,15 +1,15 @@
-import * as AmqpLib from "amqplib/callback_api";
-import { EventEmitter } from "events";
-import { Binding } from "../Binding";
-import { DeclarationOptions as ExchangeDeclarationOptions } from "../Exchange/DeclarationOptions";
-import { Exchange } from "../Exchange/Exchange";
-import { ExchangeType } from "../Exchange/ExchangeType";
-import { EmtpyLogger, LoggerFactory, SimpleLogger } from "../LoggerFactory";
-import { DeclarationOptions as QueueDeclarationOptions } from "../Queue/DeclarationOptions";
-import { Queue } from "../Queue/Queue";
-import { ConnectionMetrics } from "./ConnectionMetrics";
-import { ReconnectStrategy } from "./ReconnectStrategy";
-import { Topology } from "./Topology";
+import * as AmqpLib from "amqplib/callback_api.js";
+import { EventEmitter } from "node:events";
+import { Binding } from "../Binding.js";
+import { DeclarationOptions as ExchangeDeclarationOptions } from "../Exchange/DeclarationOptions.js";
+import { Exchange } from "../Exchange/Exchange.js";
+import { ExchangeType } from "../Exchange/ExchangeType.js";
+import { EmtpyLogger, LoggerFactory, SimpleLogger } from "../LoggerFactory.js";
+import { DeclarationOptions as QueueDeclarationOptions } from "../Queue/DeclarationOptions.js";
+import { Queue } from "../Queue/Queue.js";
+import { ConnectionMetrics } from "./ConnectionMetrics.js";
+import { ReconnectStrategy } from "./ReconnectStrategy.js";
+import { Topology } from "./Topology.js";
 
 export class Connection extends EventEmitter {
   public initialized: Promise<void>;
