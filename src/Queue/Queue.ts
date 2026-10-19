@@ -63,6 +63,11 @@ export class Queue {
    * {@link Queue.CancelLoopWindowMs} of that does not re-initialize again, which stops a cancel loop.
    */
   private _cancelRecoveredAt: number | undefined;
+  /**
+   * The generation in which the broker refused the consumer. Registering it again on the same connection would be
+   * refused again, so it is only registered again after the next reconnect.
+   */
+  private _consumerRefusedIn: number | undefined;
   /** Why the queue failed on its own, after which it is no longer declared. */
   private _failure: Error | undefined;
   /** Counts deliveries; bound once so it can be removed again. */
@@ -158,13 +163,23 @@ export class Queue {
 
   /**
    * Registers the consumer, if there is one, on the channel the queue is declared on, unless it already is
-   * registered there.
+   * registered there or the broker refused it on this connection. The consumer promise is pending until the
+   * registration is done.
    * @internal
    */
   public _initializeConsumer(redeclared = false): Promise<void> {
     const channel = this._readyChannel;
-    if (this._consumer === undefined || channel === undefined || channel === this._consumerChannel) {
+    if (
+      this._consumer === undefined ||
+      channel === undefined ||
+      channel === this._consumerChannel ||
+      this._consumerRefusedIn === this._generation
+    ) {
       return this._consuming;
+    }
+    if (this._consumerDeferred.settled) {
+      this._consumerDeferred = this.connection._createDeferred<StartConsumerResult>();
+      this._consumerInitialized = this._consumerDeferred.promise;
     }
     this._consumerChannel = channel;
     this._consuming = this._consume(channel, this._readyModel, redeclared);
@@ -270,6 +285,7 @@ export class Queue {
         throw err;
       }
       this.log.error({ err }, "Failed to start the consumer of queue '%s'.", this._name);
+      this._consumerRefusedIn = this._generation;
       this._consumerDeferred.reject(err as Error);
       this.connection._reportRecoveryFailure(err as Error, model, redeclared);
       throw err;
@@ -365,6 +381,7 @@ export class Queue {
 
     this._consumerOptions = options;
     this._consumer = onMessage;
+    delete this._consumerRefusedIn;
     this._consumerDeferred = this.connection._createDeferred<StartConsumerResult>();
     this._consumerInitialized = this._consumerDeferred.promise;
     // registers right away if the queue is ready, otherwise once it is; a reconnect registers it as well
@@ -518,6 +535,7 @@ export class Queue {
     delete this._consumer;
     delete this._consumerOptions;
     delete this._consumerChannel;
+    delete this._consumerRefusedIn;
   }
 
   /**

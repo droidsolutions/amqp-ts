@@ -1554,6 +1554,8 @@ describe("Test amqp-ts module", function () {
         await reestablished;
 
         await expect(within(consumer, 2000, "the consumer promise")).to.be.rejectedWith("403");
+        // it is not registered again until the next reconnect
+        await new Promise((resolve) => setTimeout(resolve, 1500));
         expect(errors, "one error_connection for the consumer").to.have.length(1);
         expect(errors[0].message).to.contain("403");
       } finally {
