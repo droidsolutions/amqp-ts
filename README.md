@@ -257,7 +257,7 @@ connection.on("error_connection", (err) => console.error("connection problem", e
 
 Notes:
 
-- `error_connection` is not by itself a "the connection is dead" signal. While recovery runs it also fires when only one entity could not be restored (for example a queue whose declaration now conflicts with an existing one, or a consumer the broker refuses), although the connection itself is fine. After recovery gave up (finite `maxRetries`) it fires with the give-up error and no more reconnects happen.
+- `error_connection` is not by itself a "the connection is dead" signal. While recovery runs it also fires when only one entity could not be restored (for example a queue whose declaration now conflicts with an existing one, a consumer the broker refuses, or one it cancels again right after it was registered again), although the connection itself is fine. After recovery gave up (finite `maxRetries`) it fires with the give-up error and no more reconnects happen.
 - Exceptions thrown by your listeners are caught and logged at error level instead of propagating, and the listeners after the failing one still run. With the default (empty) logger such errors are invisible, so pass a [logger factory](#logging).
 
 ## Automatic Reconnection <a name="reconnect"></a>
@@ -296,7 +296,7 @@ await connection.initialized; // rejects if the broker is still unreachable afte
 - On `lost_connection` the connection and all exchanges, queues, bindings and consumers become "not initialized" and their `initialized` promises are replaced by pending ones. Messages you send meanwhile are buffered.
 - After each reconnect the topology is declared again in dependency order (exchanges, queues, bindings, consumers) before `re_established_connection` (or `open_connection` for the first connect) is emitted and the pending promises resolve.
 - If recovery gives up (finite `maxRetries`), `error_connection` fires with the give-up error, every pending `initialized` rejects, and buffered messages are dropped with a warn log.
-- Without a reconnect: when the broker closes the channel of a single exchange or queue (for example error 406 on a double ack, or 404 when publishing to a deleted exchange), only that entity gets a new channel, including its bindings and consumer. A consumer cancelled by the broker (for example because its queue was deleted) is registered again.
+- Without a reconnect: when the broker closes the channel of a single exchange or queue (for example error 406 on a double ack, or 404 when publishing to a deleted exchange), only that entity gets a new channel, including its bindings and consumer. A consumer cancelled by the broker (for example because its queue was deleted) is registered again. If the broker cancels it again within a second of that, it stays cancelled until the next reconnect and `error_connection` is emitted.
 
 ## Automatic JSON content
 

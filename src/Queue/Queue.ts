@@ -426,11 +426,13 @@ export class Queue {
       return;
     }
     if (this._cancelRecoveredAt !== undefined && Date.now() - this._cancelRecoveredAt < Queue.CancelLoopWindowMs) {
-      this.log.error(
-        "The consumer of queue '%s' was cancelled by the broker again right after it was registered again; it is " +
-          "registered again on the next reconnect.",
-        this._name,
+      const err = new Error(
+        `The consumer of queue '${this._name}' was cancelled by the broker again right after it was registered ` +
+          "again; it is registered again on the next reconnect.",
       );
+      this.log.error({ err }, "%s", err.message);
+      // the consumer is gone until then, nobody would notice otherwise
+      this.connection._reportRecoveryFailure(err, this._readyModel, true);
       return;
     }
     this.log.warn("The consumer of queue '%s' was cancelled by the broker, re-initializing the queue.", this._name);

@@ -1304,6 +1304,8 @@ describe("Test amqp-ts module", function () {
       await consumer;
       await currentConnection.completeConfiguration();
 
+      const errors: Error[] = [];
+      currentConnection.on("error_connection", (err: Error) => errors.push(err));
       const raw = await AmqpLib.connect(ConnectionUrl);
       try {
         const rawChannel = await raw.createChannel();
@@ -1313,12 +1315,16 @@ describe("Test amqp-ts module", function () {
         await rawChannel.deleteQueue(queueName);
         await replaced(() => queue.initialized, first);
         await queue._consumerInitialized;
+        expect(errors, "a cancel that is recovered is not reported").to.eql([]);
 
         // a second cancel within the loop window is left to the next reconnect
         const recovered = queue.initialized;
         await rawChannel.deleteQueue(queueName);
         await new Promise((resolve) => setTimeout(resolve, 1500));
         expect(queue.initialized, "no second re-initialization").to.equal(recovered);
+        // the consumer is gone until then, which must not go unnoticed
+        expect(errors, "one error_connection for the lost consumer").to.have.length(1);
+        expect(errors[0].message).to.contain(queueName);
       } finally {
         await raw.close();
       }
