@@ -13,7 +13,7 @@ import { Topology } from "../src/Connection/Topology.js";
 import { LoggerFactory } from "../src/LoggerFactory.js";
 import { Message } from "../src/Message.js";
 import { Queue } from "../src/Queue/Queue.js";
-import { killConnections, uniqueConnectionName } from "./helpers/broker.js";
+import { killConnections, uniqueConnectionName, waitForConsumerTags } from "./helpers/broker.js";
 
 /**
  * Until we get a good mock for amqplib we will test using a local rabbitmq instance
@@ -930,11 +930,16 @@ describe("Test amqp-ts module", function () {
   describe("reconnect behaviour", function () {
     this.timeout(ReconnectTimeout);
 
-    function nextMessage(queue: Queue, options: AmqpLib.Options.Consume = { noAck: true }) {
+    function nextMessage(
+      queue: Queue,
+      options: AmqpLib.Options.Consume = { noAck: true },
+      onMessage?: (message: Message) => void,
+    ) {
       const received: string[] = [];
       let notify: (() => void) | undefined;
       const consumer = queue.activateConsumer((message: Message) => {
         received.push(message.getContent() as string);
+        onMessage?.(message);
         notify?.();
       }, options);
       const waitFor = async (content: string): Promise<void> => {
@@ -968,8 +973,15 @@ describe("Test amqp-ts module", function () {
       await consumer;
       await currentConnection.completeConfiguration();
 
+      let reestablished = false;
+      currentConnection.once("re_established_connection", () => {
+        reestablished = true;
+      });
+      const lost = once(currentConnection, "lost_connection");
       expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
-      // send immediately, before the library has noticed or recovered
+      // the client has seen the close, but the connection is not back yet
+      await lost;
+      expect(reestablished, "connection must still be down when sending").to.equal(false);
       queue.send(new Message("while-disconnected"));
       await waitFor("while-disconnected");
     });
@@ -1008,39 +1020,30 @@ describe("Test amqp-ts module", function () {
     });
 
     it("consumer resumes after its channel is closed by a double ack", async function () {
-      const queue = currentConnection.declareQueue(nextQueueName());
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
       let first = true;
-      const received: string[] = [];
-      let notify: (() => void) | undefined;
-      await queue.activateConsumer(
-        (message) => {
-          received.push(message.getContent() as string);
+      const { consumer, waitFor } = nextMessage(queue, { noAck: false }, (message) => {
+        message.ack();
+        if (first) {
+          first = false;
+          // acking the same delivery twice makes the broker close this channel with 406 PRECONDITION_FAILED
           message.ack();
-          if (first) {
-            first = false;
-            // acking the same delivery twice makes the broker close this channel with 406 PRECONDITION_FAILED
-            message.ack();
-          }
-          notify?.();
-        },
-        { noAck: false },
-      );
+        }
+      });
+      await consumer;
       await currentConnection.completeConfiguration();
 
+      const tagsBefore = await waitForConsumerTags(queueName, (tags) => tags.length > 0);
+
       queue.send(new Message("first"));
-      while (!received.includes("first")) {
-        await new Promise<void>((resolve) => {
-          notify = resolve;
-        });
-      }
-      // give the broker time to close the channel, then check the library recovers the consumer
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await waitFor("first");
+
+      // the consumer is re-registered under a new tag only if its channel was closed and recovered
+      await waitForConsumerTags(queueName, (tags) => tags.length > 0 && tags.every((t) => !tagsBefore.includes(t)));
+
       queue.send(new Message("second"));
-      while (!received.includes("second")) {
-        await new Promise<void>((resolve) => {
-          notify = resolve;
-        });
-      }
+      await waitFor("second");
     });
   });
 });

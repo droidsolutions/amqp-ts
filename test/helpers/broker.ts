@@ -101,3 +101,30 @@ export async function restartBroker(): Promise<void> {
   }
   throw new Error("Broker did not come back after restart");
 }
+
+/**
+ * Polls the management API for the consumer tags registered on a queue (default vhost) until `predicate` accepts
+ * them. The management stats lag by a few seconds, hence the generous default timeout.
+ */
+export async function waitForConsumerTags(
+  queueName: string,
+  predicate: (tags: string[]) => boolean,
+  timeoutMs = 20_000,
+): Promise<string[]> {
+  const { base, headers } = getTarget();
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const response = await fetch(`${base}/api/queues/%2F/${encodeURIComponent(queueName)}`, { headers });
+    if (response.ok) {
+      const queue = (await response.json()) as { consumer_details?: { consumer_tag: string }[] };
+      const tags = (queue.consumer_details ?? []).map((c) => c.consumer_tag);
+      if (predicate(tags)) {
+        return tags;
+      }
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`Consumer tags of ${queueName} never matched the expectation`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}

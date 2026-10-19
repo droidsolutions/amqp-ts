@@ -61,7 +61,7 @@ describe("AMQP Connection class automatic reconnection", function () {
       })
       .catch((err) => {
         console.log("Consumer intialization FAILED!!!");
-        done(err);
+        cleanup(connection, done, err as Error);
       });
   });
 
@@ -95,7 +95,7 @@ describe("AMQP Connection class automatic reconnection", function () {
       })
       .catch((err) => {
         console.log("Consumer intialization FAILED!!!");
-        done(err);
+        cleanup(connection, done, err as Error);
       });
   });
 });
