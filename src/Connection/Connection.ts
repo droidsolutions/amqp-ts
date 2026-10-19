@@ -5,6 +5,7 @@ import { Deferred } from "../Deferred.js";
 import { DeclarationOptions as ExchangeDeclarationOptions } from "../Exchange/DeclarationOptions.js";
 import { Exchange } from "../Exchange/Exchange.js";
 import { ExchangeType } from "../Exchange/ExchangeType.js";
+import { errorMessage } from "../errorMessage.js";
 import { EmtpyLogger, LoggerFactory, SimpleLogger } from "../LoggerFactory.js";
 import { DeclarationOptions as QueueDeclarationOptions } from "../Queue/DeclarationOptions.js";
 import { Queue } from "../Queue/Queue.js";
@@ -139,6 +140,15 @@ export class Connection extends EventEmitter {
         }
       }
     }
+    this._reportRecoveryFailure(err, model, redeclared);
+  }
+
+  /**
+   * @internal Emits `error_connection` for a failure while something was declared again: in the setup after a
+   * reconnect (on that setup's model), or after a channel closed (`redeclared`). Nobody awaits the promises then, so
+   * this is the only signal. Failures of a first declaration reject the promise their caller has instead.
+   */
+  public _reportRecoveryFailure(err: Error, model: ChannelModel, redeclared: boolean): void {
     if (redeclared || (this._connectedBefore && model === this._setupModel)) {
       this._emitSafely("error_connection", err);
     }
@@ -191,13 +201,16 @@ export class Connection extends EventEmitter {
   /**
    * Emits an event to the user's listeners. Most events are emitted from within amqplib's recovery, where a throwing
    * listener would stop the reconnect from being scheduled, or from a promise chain, where it would be an unhandled
-   * rejection. So a listener's error is logged instead.
+   * rejection. So a listener's error is logged instead, and the listeners after it still get the event. The order is
+   * that of `emit`, and `once` listeners remove themselves as usual.
    */
   private _emitSafely(event: string, ...args: unknown[]): void {
-    try {
-      this.emit(event, ...args);
-    } catch (err) {
-      this.log.error({ err }, "A listener for '%s' threw: %s", event, (err as Error).message);
+    for (const listener of this.rawListeners(event) as ((...args: unknown[]) => unknown)[]) {
+      try {
+        listener.apply(this, args);
+      } catch (err) {
+        this.log.error({ err }, "A listener for '%s' threw: %s", event, errorMessage(err));
+      }
     }
   }
 
@@ -312,7 +325,7 @@ export class Connection extends EventEmitter {
     this.isConnected = false;
     this._invalidate();
     this._stop(err);
-    this.log.warn({ err }, "Connection failed, giving up: %s", err.message);
+    this.log.warn({ err }, "Connection failed, giving up: %s", errorMessage(err));
     this._emitSafely("error_connection", err);
   }
 

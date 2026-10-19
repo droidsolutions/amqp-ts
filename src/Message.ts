@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { IllegalOperationError, type Channel, type Message as AmqpMessage } from "amqplib";
 import { AmqpProperties } from "./AmqpProperties.js";
+import { errorMessage } from "./errorMessage.js";
 import { Exchange } from "./Exchange/Exchange.js";
 import { SimpleLogger } from "./LoggerFactory.js";
 import { Queue } from "./Queue/Queue.js";
@@ -91,7 +92,7 @@ export class Message {
       try {
         await ready;
       } catch (err) {
-        const reason = (err as Error).message;
+        const reason = errorMessage(err);
         log().warn({ err }, "Dropping message to '%s', it cannot be initialized: %s", destination.name, reason);
         return;
       }

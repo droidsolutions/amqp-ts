@@ -146,13 +146,13 @@ export class Queue {
    * registered there.
    * @internal
    */
-  public _initializeConsumer(): Promise<void> {
+  public _initializeConsumer(redeclared = false): Promise<void> {
     const channel = this._readyChannel;
     if (this._consumer === undefined || channel === undefined || channel === this._consumerChannel) {
       return this._consuming;
     }
     this._consumerChannel = channel;
-    this._consuming = this._consume(channel, this._readyModel);
+    this._consuming = this._consume(channel, this._readyModel, redeclared);
     return this._consuming;
   }
 
@@ -223,7 +223,12 @@ export class Queue {
     }
   }
 
-  private async _consume(channel: Channel, model: ChannelModel): Promise<void> {
+  /**
+   * Registers the consumer on the given channel. A refusal while it is registered again during recovery (for example
+   * 403 because another connection holds an exclusive consumer) is also reported through `error_connection`, since
+   * the consumer would otherwise stop silently.
+   */
+  private async _consume(channel: Channel, model: ChannelModel, redeclared: boolean): Promise<void> {
     try {
       const ok = await channel.consume(this._name, this._createConsumerWrapper(channel), this._consumerOptions);
       if (channel !== this._consumerChannel) {
@@ -244,6 +249,7 @@ export class Queue {
       }
       this.log.error({ err }, "Failed to start the consumer of queue '%s'.", this._name);
       this._consumerDeferred.reject(err as Error);
+      this.connection._reportRecoveryFailure(err as Error, model, redeclared);
       throw err;
     }
   }
@@ -268,7 +274,7 @@ export class Queue {
       }
       this.log.warn("Channel of queue '%s' closed, re-initializing it.", this._name);
       this._reinitialize(model, generation)
-        .then(() => (consumeFailed ? undefined : this._initializeConsumer()))
+        .then(() => (consumeFailed ? undefined : this._initializeConsumer(true)))
         .catch(() => {});
     });
   }
