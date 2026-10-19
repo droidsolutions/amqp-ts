@@ -1629,5 +1629,25 @@ describe("Test amqp-ts module", function () {
         await deleteOnBroker("queue", queueName);
       }
     });
+
+    it("fails a bad binding on its own without taking down a sibling binding", async function () {
+      const headers = currentConnection.declareExchange(nextExchangeName(), "headers");
+      const fanout = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const queue = currentConnection.declareQueue(nextQueueName());
+      // created together, so both binds run at the same time
+      const bad = queue.bind(headers, "", { "x-match": "bogus" });
+      const good = queue.bind(fanout);
+
+      await expect(bad).to.be.rejectedWith("x-match");
+      await within(good, 2000, "the good binding");
+      expect(Object.keys(currentConnection._bindings), "only the good binding is declared").to.eql([
+        `[${fanout.name}]toQueue[${queue.name}]`,
+      ]);
+
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      fanout.send(new Message("through-the-good-binding"));
+      await within(waitFor("through-the-good-binding"), 5000, "the message through the good binding");
+    });
   });
 });

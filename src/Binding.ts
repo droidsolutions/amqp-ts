@@ -69,9 +69,9 @@ export class Binding {
   }
 
   /**
-   * Creates the binding on the destination's channel once source and destination are initialized on the given
-   * generation, then settles {@link initialized}. Does nothing if the binding was already initialized for the given
-   * generation. A source on another connection is only waited for, its own connection initializes it.
+   * Creates the binding on a short-lived channel of the given model once source and destination are initialized on
+   * the given generation, then settles {@link initialized}. Does nothing if the binding was already initialized for the
+   * given generation. A source on another connection is only waited for, its own connection initializes it.
    * @internal
    * @internal
    */
@@ -100,8 +100,7 @@ export class Binding {
 
   /**
    * Creates the binding again on a short-lived channel of the given model, then resolves {@link initialized}. Unlike
-   * {@link _initialize} it neither waits for source and destination nor uses the destination's channel: a failing
-   * bind closes the channel it runs on, and closing the destination's channel would re-initialize it again.
+   * {@link _initialize} it does not wait for source and destination.
    *
    * A failure is never final. The other end may be gone at this moment (for example an autoDelete exchange the broker
    * removed together with the queue), so the binding stays declared and {@link initialized} stays pending until the
@@ -118,17 +117,8 @@ export class Binding {
     const source = this._source;
     const connection = destination.connection;
     this._invalidate();
-    let channel: Channel | undefined;
     try {
-      channel = await model.createChannel();
-      channel.on("error", (err: Error) => {
-        this.log.debug({ err }, "Re-binding %s->%s failed: %s", source.name, destination.name, err.message);
-      });
-      if (destination instanceof Queue) {
-        await channel.bindQueue(destination.name, source.name, this.pattern, this.args);
-      } else {
-        await channel.bindExchange(destination.name, source.name, this.pattern, this.args);
-      }
+      await this._create(model);
       if (!connection._isModelClosed(model)) {
         this._deferred.resolve(this);
       } else if (!this._isDeclared) {
@@ -149,8 +139,6 @@ export class Binding {
         source.name,
         destination.name,
       );
-    } finally {
-      channel?.close().catch(() => {});
     }
   }
 
@@ -196,6 +184,30 @@ export class Binding {
     return this._source.connection !== this._destination.connection;
   }
 
+  /**
+   * Creates the binding on a short-lived channel of the given model. A failing bind closes the channel it runs on, so
+   * it must not be the destination's channel, which would then re-initialize, nor one shared with other bindings,
+   * which would then fail as well.
+   */
+  private async _create(model: ChannelModel): Promise<void> {
+    const destination = this._destination;
+    const source = this._source;
+    let channel: Channel | undefined;
+    try {
+      channel = await model.createChannel();
+      channel.on("error", (err: Error) => {
+        this.log.debug({ err }, "Binding %s->%s failed: %s", source.name, destination.name, err.message);
+      });
+      if (destination instanceof Queue) {
+        await channel.bindQueue(destination.name, source.name, this.pattern, this.args);
+      } else {
+        await channel.bindExchange(destination.name, source.name, this.pattern, this.args);
+      }
+    } finally {
+      channel?.close().catch(() => {});
+    }
+  }
+
   private async _bind(model: ChannelModel, generation: number, attempt: number): Promise<void> {
     const destination = this._destination;
     const source = this._source;
@@ -209,11 +221,7 @@ export class Binding {
       if (attempt !== this._attempt) {
         return;
       }
-      if (destination instanceof Queue) {
-        await destination._channel.bindQueue(destination.name, source.name, this.pattern, this.args);
-      } else {
-        await destination._channel.bindExchange(destination.name, source.name, this.pattern, this.args);
-      }
+      await this._create(model);
       if (attempt !== this._attempt) {
         return;
       }
