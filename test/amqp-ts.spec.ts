@@ -1972,6 +1972,21 @@ describe("Test amqp-ts module", function () {
       }
     });
 
+    it("deleting a binding that was replaced leaves the newer one alone", async function () {
+      const exchange = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const older = await queue.bind(exchange);
+      const newer = await queue.bind(exchange);
+      expect(newer).to.not.equal(older);
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+
+      await within(older.delete(), 2000, "deleting the older binding");
+      expect(Object.values(currentConnection._bindings), "the newer binding stays declared").to.eql([newer]);
+      exchange.send(new Message("through-the-newer-binding"));
+      await within(waitFor("through-the-newer-binding"), 5000, "the message through the newer binding");
+    });
+
     it("requeues a message delivered to a consumer that was stopped meanwhile", function () {
       const queue = currentConnection.declareQueue(nextQueueName());
       const requeued: boolean[] = [];

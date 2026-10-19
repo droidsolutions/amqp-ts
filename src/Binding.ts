@@ -294,7 +294,8 @@ export class Binding {
   /**
    * Deletes this binding of either a queue or an exchange. It is no longer declared from then on, so nothing creates it
    * again, and an {@link initialized} that is still pending rejects. The unbind runs once the destination is
-   * initialized, on a short-lived channel. Deleting it again returns the same promise, also after a failure.
+   * initialized, on a short-lived channel. Deleting it again returns the same promise, also after a failure. A binding
+   * that was already replaced by binding the same pair again is only settled: the broker binding is the newer one's.
    */
   public delete(): Promise<void> {
     this._deleting ??= this._delete();
@@ -304,10 +305,16 @@ export class Binding {
   private async _delete(): Promise<void> {
     const destination = this._destination;
     const connection = destination.connection;
-    if (this._isDeclared) {
+    const declared = this._isDeclared;
+    if (declared) {
       delete connection._bindings[this._id];
     }
     this._rejectPending(new Error(`Binding ${this._id} was deleted`));
+    if (!declared) {
+      // replaced by binding the same pair again, or removed with a failed end: the broker binding, if any, belongs to
+      // the binding that replaced it, so unbinding it here would remove it from under that one
+      return;
+    }
     await destination.initialized;
     // a creation that is still in flight would create it again after the unbind
     await this._creating;
