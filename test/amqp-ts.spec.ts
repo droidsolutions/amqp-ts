@@ -1630,6 +1630,28 @@ describe("Test amqp-ts module", function () {
       }
     });
 
+    it("delivers a message sent while a broker-cancelled consumer's channel is closing", async function () {
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      // send right after the cancel handling started to close the channel, before the broker confirmed the close
+      const channel = queue._channel;
+      const close = channel.close.bind(channel) as () => Promise<void>;
+      channel.close = (): Promise<void> => {
+        const closing = close();
+        queue.send(new Message("while-closing"));
+        return closing;
+      };
+      const first = queue.initialized;
+      await deleteOnBroker("queue", queueName);
+      await replaced(() => queue.initialized, first);
+
+      await within(waitFor("while-closing"), 5000, "the message sent while the channel was closing");
+    });
+
     it("fails a bad binding on its own without taking down a sibling binding", async function () {
       const headers = currentConnection.declareExchange(nextExchangeName(), "headers");
       const fanout = currentConnection.declareExchange(nextExchangeName(), "fanout");

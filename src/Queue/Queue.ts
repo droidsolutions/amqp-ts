@@ -125,13 +125,18 @@ export class Queue {
    */
   public _invalidate(): void {
     this._readyChannel = undefined;
-    if (this._deferred.settled) {
-      this._deferred = this.connection._createDeferred<InitializeResult>();
-      this.initialized = this._deferred.promise;
-    }
+    this._pendInitialized();
     if (this._consumerDeferred?.settled) {
       this._consumerDeferred = this.connection._createDeferred<StartConsumerResult>();
       this._consumerInitialized = this._consumerDeferred.promise;
+    }
+  }
+
+  /** Replaces a settled {@link initialized} with a pending one. */
+  private _pendInitialized(): void {
+    if (this._deferred.settled) {
+      this._deferred = this.connection._createDeferred<InitializeResult>();
+      this.initialized = this._deferred.promise;
     }
   }
 
@@ -430,6 +435,9 @@ export class Queue {
     }
     this.log.warn("The consumer of queue '%s' was cancelled by the broker, re-initializing the queue.", this._name);
     this._cancelReinitGeneration = this._generation;
+    // a publish fails until the broker confirmed the close, so sends must wait for the re-initialization instead of
+    // taking the channel for closed on purpose; the close handling still needs the ready channel
+    this._pendInitialized();
     channel.close().catch(() => {});
   }
 
