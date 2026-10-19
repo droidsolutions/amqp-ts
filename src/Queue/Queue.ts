@@ -244,9 +244,16 @@ export class Queue {
    * the consumer would otherwise stop silently.
    */
   private async _consume(channel: Channel, model: ChannelModel, redeclared: boolean): Promise<void> {
+    const options = this._consumerOptions;
     try {
-      const ok = await channel.consume(this._name, this._createConsumerWrapper(channel), this._consumerOptions);
+      const ok = await channel.consume(
+        this._name,
+        this._createConsumerWrapper(channel, options?.noAck === true),
+        options,
+      );
       if (channel !== this._consumerChannel) {
+        // stopped or registered elsewhere meanwhile, but the broker registered it all the same
+        this._cancelSuperseded(channel, ok.consumerTag);
         return;
       }
       if (this.connection._isModelClosed(model)) {
@@ -267,6 +274,15 @@ export class Queue {
       this.connection._reportRecoveryFailure(err as Error, model, redeclared);
       throw err;
     }
+  }
+
+  /** Cancels a consumer registration that completed after it was superseded, so it does not keep receiving messages. */
+  private _cancelSuperseded(channel: Channel, consumerTag: string): void {
+    Promise.resolve()
+      .then(() => channel.cancel(consumerTag))
+      .catch((err: Error) => {
+        this.log.debug({ err }, "Cancelling a superseded consumer of queue '%s' failed: %s", this._name, err.message);
+      });
   }
 
   /**
@@ -360,11 +376,27 @@ export class Queue {
     return this._consumerInitialized;
   }
 
-  /** Wraps the consumer handler for messages delivered on the given channel. */
-  private _createConsumerWrapper(channel: Channel): (msg: ConsumeMessage | null) => void {
+  /**
+   * Wraps the consumer handler for messages delivered on the given channel. A message that arrives after the consumer
+   * was stopped, before the broker confirmed the cancel, is given back to the queue for another consumer; one that
+   * needs no acknowledgement cannot be given back.
+   */
+  private _createConsumerWrapper(channel: Channel, noAck: boolean): (msg: ConsumeMessage | null) => void {
     return (msg: ConsumeMessage | null): void => {
       if (msg === null) {
         this._onConsumerCancelled(channel);
+        return;
+      }
+      if (this._consumer === undefined) {
+        this.log.debug("Message for the stopped consumer of queue '%s', requeuing it.", this._name);
+        if (!noAck) {
+          try {
+            channel.nack(msg, false, true);
+          } catch (err) {
+            // the channel closed meanwhile, which requeues it as well
+            this.log.debug({ err }, "Requeuing a message of queue '%s' failed.", this._name);
+          }
+        }
         return;
       }
       try {
@@ -444,8 +476,9 @@ export class Queue {
   }
 
   /**
-   * Completely removes the consumer handler and cancels the channel. A consumer the broker refused has nothing to
-   * cancel, it is only removed.
+   * Completely removes the consumer handler and cancels the consumer on the broker. A consumer the broker refused has
+   * nothing to cancel, it is only removed. A consumer whose channel closes meanwhile is registered again on a new one,
+   * so that registration is waited for and cancelled instead.
    */
   public async stopConsumer(): Promise<void> {
     if (this._consumerStopping || this._consumerInitialized == undefined) {
@@ -453,12 +486,28 @@ export class Queue {
     }
     this._consumerStopping = true;
     try {
-      const registered = await this._consumerInitialized.then(
-        () => true,
-        () => false,
-      );
-      if (registered) {
-        await this._channel.cancel(this._consumerTag);
+      for (;;) {
+        const consumer = this._consumerInitialized;
+        const registered = await consumer.then(
+          () => true,
+          () => false,
+        );
+        if (this._consumerInitialized !== consumer) {
+          // invalidated meanwhile, a registration is under way again
+          continue;
+        }
+        if (!registered) {
+          break;
+        }
+        try {
+          await this._consumerChannel.cancel(this._consumerTag);
+          break;
+        } catch (err) {
+          if (this._consumerInitialized === consumer) {
+            throw err;
+          }
+          // the channel closed while cancelling and the consumer is being registered again
+        }
       }
     } finally {
       // a failed cancel can be retried

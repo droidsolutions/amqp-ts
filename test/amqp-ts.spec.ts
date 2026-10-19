@@ -1861,5 +1861,88 @@ describe("Test amqp-ts module", function () {
       expect(await existsOnBroker("exchange", exchange2.name), exchange2.name).to.equal(false);
       expect(await existsOnBroker("queue", queue.name), queue.name).to.equal(false);
     });
+
+    it("stops a consumer while it is registered again after a channel repair", async function () {
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+      let first = true;
+      const { consumer, waitFor } = nextMessage(queue, { noAck: false }, (message) => {
+        message.ack();
+        if (first) {
+          first = false;
+          // acking the same delivery twice makes the broker close this channel with 406 PRECONDITION_FAILED
+          message.ack();
+        }
+      });
+      await consumer;
+      await currentConnection.completeConfiguration();
+
+      queue.send(new Message("first"));
+      await waitFor("first");
+      // the broker closes the channel meanwhile, and the queue registers its consumer again
+      await within(queue.stopConsumer(), 5000, "stopConsumer");
+      expect(queue._consumerInitialized, "the consumer is cleared").to.equal(undefined);
+
+      await within(queue.initialized, 5000, "the queue's initialized");
+      await sleep(300);
+      const raw = await rawChannel();
+      try {
+        expect((await raw.channel.checkQueue(queueName)).consumerCount, "no consumer is left").to.equal(0);
+      } finally {
+        await raw.close();
+      }
+    });
+
+    it("cancels a consumer registration that completes after stopConsumer", async function () {
+      const queueName = nextQueueName();
+      const queue = currentConnection.declareQueue(queueName);
+      await queue.initialized;
+      const internals = queue as unknown as { _consumerDeferred?: { reject(err: Error): void } };
+
+      // stopConsumer finishes while a registration is in flight, as it did when the consumer promise was already
+      // rejected by an earlier refusal
+      const channel = queue._channel;
+      const consume = channel.consume.bind(channel) as AmqpLib.Channel["consume"];
+      let registering: Promise<AmqpLib.Replies.Consume> | undefined;
+      let stopping: Promise<void> | undefined;
+      channel.consume = (...args: Parameters<AmqpLib.Channel["consume"]>) => {
+        registering = consume(...args);
+        internals._consumerDeferred?.reject(new Error("refused before"));
+        stopping = queue.stopConsumer();
+        return registering;
+      };
+      void queue.activateConsumer(() => {});
+      while (registering === undefined) {
+        await sleep(10);
+      }
+      await within(stopping, 2000, "stopConsumer");
+      await within(registering, 2000, "the registration");
+      await sleep(300);
+
+      const raw = await rawChannel();
+      try {
+        expect((await raw.channel.checkQueue(queueName)).consumerCount, "no orphaned consumer").to.equal(0);
+      } finally {
+        await raw.close();
+      }
+    });
+
+    it("requeues a message delivered to a consumer that was stopped meanwhile", function () {
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const requeued: boolean[] = [];
+      const channel = {
+        nack: (_message: unknown, _allUpTo: boolean, requeue: boolean) => requeued.push(requeue),
+      };
+      const internals = queue as unknown as {
+        _createConsumerWrapper(channel: unknown, noAck: boolean): (msg: unknown) => void;
+      };
+      const message = { content: Buffer.from("late"), properties: {}, fields: { consumerTag: "tag" } };
+
+      expect(() => internals._createConsumerWrapper(channel, false)(message)).to.not.throw();
+      expect(requeued, "nacked with requeue").to.eql([true]);
+      // without acknowledgements there is nothing to give back
+      internals._createConsumerWrapper(channel, true)(message);
+      expect(requeued).to.eql([true]);
+    });
   });
 });
