@@ -47,7 +47,7 @@ It does depend on the following npm libraries:
 No need to nest functionality, just create a connection, declare your exchanges, queues and
 bindings and send and receive messages. The library takes care of any direct dependencies.
 
-If you define an exchange and a queue and bind the queue to the exchange and want to make sure that the queue is connected to the exchange before you send a message to the exchange you can call the `connection.completeConfiguration()` method and act on the promise it returns.
+If you define an exchange and a queue and bind the queue to the exchange and want to make sure that the queue is connected to the exchange before you send a message to the exchange you can call the `connection.completeConfiguration()` method and act on the promise it returns. It is also the way to gate the start of your application on the topology, see [Waiting for the topology at startup](#startup).
 
 # Usage <a name="usage"></a>
 
@@ -229,24 +229,47 @@ To know the status of the connection: `connection.isConnected`. Returns true if 
 
 `connection.getConnection` returns the current [amqplib](https://amqp-node.github.io/amqplib/) `ChannelModel`, or `undefined` while the connection is down (before the first connect, during a reconnect and after `close()`). It is replaced on every reconnect, so do not keep a reference to it. Messaging should go through the exchanges and queues of this library, which survive reconnects.
 
-`connection.initialized` is a promise that resolves once the connection is established and the declared topology exists. While the connection is down it is replaced by a pending promise that resolves after the next successful reconnect. It rejects when `close()` is called or recovery gives up before that. The same is true for the `initialized` promises of exchanges, queues, bindings and the consumer of a queue (`activateConsumer`): they reject on `close()` and when recovery gives up, and reading `initialized` of an entity after `close()` returns a rejected promise.
+`connection.initialized` is a promise that resolves once the connection is established and the declared topology was set up. While the connection is down it is replaced by a pending promise that resolves after the next successful reconnect. It rejects when `close()` is called or recovery gives up before that. The same is true for the `initialized` promises of exchanges, queues, bindings and the consumer of a queue (`activateConsumer`): they reject on `close()` and when recovery gives up, and reading `initialized` of an entity after `close()` returns a rejected promise.
+
+`connection.initialized` only reflects the connection. An exchange, queue, binding or consumer that fails on its own (for example a `noCreate` queue that does not exist, or a consumer the broker refuses) rejects its own promise and is reported through [`error_connection`](#events), but it does not keep `connection.initialized` from resolving, so one broken entity cannot take the whole connection down.
+
+### Waiting for the topology at startup <a name="startup"></a>
+
+To start only once everything you declared works, await `connection.completeConfiguration()`. It waits until every declared exchange, queue and binding is initialized and every activated consumer is registered, and it rejects when one of them failed, at the first connect or later. It rejects as long as the failed entity is not declared again (a refused consumer: until the next reconnect registers it), so asking again does not hide a failure.
+
+```ts
+import { Connection, Message } from "@droidsolutions-oss/amqp-ts";
+
+const connection = new Connection("amqp://localhost");
+const queue = connection.declareQueue("orders", { durable: true });
+void queue.bind(connection.declareExchange("events", "topic"), "order.*");
+void queue.activateConsumer((message: Message) => console.log("order", message.getContent()));
+
+try {
+  await connection.completeConfiguration();
+} catch (err) {
+  console.error("the topology could not be set up", err);
+  await connection.close();
+  process.exit(1);
+}
+```
 
 ## Sending messages <a name="sending"></a>
 
-`exchange.send(message, routingKey)` and `queue.send(message)` return `void`. A message sent before the connection or the exchange/queue is ready is buffered and sent as soon as it is. A message that can no longer be sent, because recovery gave up, `close()` was called or the exchange/queue was closed or deleted, is logged at warn level and dropped. (In 3.x, sending to a closed entity threw a `TypeError`.) If you need to know that a message left, await `connection.completeConfiguration()` or the `initialized` promise of the target before sending.
+`exchange.send(message, routingKey)` and `queue.send(message)` return `void`. A message sent before the connection or the exchange/queue is ready is buffered and sent as soon as it is. The same goes for a message sent while the connection or the channel is lost or closing, for example while amqplib closes the connection after a protocol error: it is sent once the exchange/queue is initialized again. A message that can no longer be sent, because recovery gave up, `close()` was called or the exchange/queue was closed or deleted, is logged at warn level and dropped. (In 3.x, sending to a closed entity threw a `TypeError`.) If you need to know that a message left, await `connection.completeConfiguration()` or the `initialized` promise of the target before sending.
 
 ## Events <a name="events"></a>
 
 The `Connection` is an `EventEmitter`. It emits these events:
 
-| Event                       | Emitted when                                                                                                                                                              |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open_connection`           | The first connection is established and the declared topology (exchanges, queues, bindings, consumers) is initialized.                                                    |
-| `re_established_connection` | A later connection, after `lost_connection`, is established and the topology is restored.                                                                                |
-| `lost_connection`           | The connection was lost unexpectedly (not after `close()`), before reconnecting is attempted.                                                                             |
-| `trying_connect`            | A (re)connect attempt was scheduled, once per attempt.                                                                                                                    |
-| `close_connection`          | The connection was closed after you called `close()`.                                                                                                                     |
-| `error_connection(err)`     | Recovery gave up (see `maxRetries`), or a single exchange, queue, binding or consumer could not be declared or registered again during recovery. `err` is the cause.     |
+| Event                       | Emitted when                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open_connection`           | The first connection is established and the declared topology (exchanges, queues, bindings, consumers) was set up. An entity that failed on its own does not prevent it.        |
+| `re_established_connection` | A later connection, after `lost_connection`, is established and the topology is restored.                                                                                       |
+| `lost_connection`           | The connection was lost unexpectedly (not after `close()`), before reconnecting is attempted.                                                                                   |
+| `trying_connect`            | A (re)connect attempt was scheduled, once per attempt.                                                                                                                          |
+| `close_connection`          | The connection was closed after you called `close()`.                                                                                                                           |
+| `error_connection(err)`     | Recovery gave up (see `maxRetries`), or a single exchange, queue, binding or consumer failed on its own, at its first declaration or again during recovery. `err` is the cause. |
 
 ```ts
 connection.on("open_connection", () => console.log("connected"));
@@ -257,7 +280,8 @@ connection.on("error_connection", (err) => console.error("connection problem", e
 
 Notes:
 
-- `error_connection` is not by itself a "the connection is dead" signal. While recovery runs it also fires when only one entity could not be restored (for example a queue whose declaration now conflicts with an existing one, a consumer the broker refuses, or one it cancels again right after it was registered again), although the connection itself is fine. After recovery gave up (finite `maxRetries`) it fires with the give-up error and no more reconnects happen.
+- `error_connection` is not by itself a "the connection is dead" signal. It also fires when only one entity failed, although the connection itself is fine: for example a `noCreate` exchange or queue that does not exist, a queue whose declaration conflicts with an existing one, a binding the broker refuses, a consumer the broker refuses, or one it cancels again right after it was registered again. That includes the first declaration, also of entities nobody awaits, and the declarations repeated during recovery. After recovery gave up (finite `maxRetries`) it fires with the give-up error and no more reconnects happen.
+- To find out at startup whether the topology works, await [`completeConfiguration()`](#startup) instead of listening for this event.
 - Exceptions thrown by your listeners are caught and logged at error level instead of propagating, and the listeners after the failing one still run. With the default (empty) logger such errors are invisible, so pass a [logger factory](#logging).
 
 ## Automatic Reconnection <a name="reconnect"></a>
@@ -282,7 +306,7 @@ import { Connection, type RecoveryOptions } from "@droidsolutions-oss/amqp-ts";
 const recovery: RecoveryOptions = { initialMaxRetries: 3, initialDelay: 500, maxDelay: 10000 };
 const connection = new Connection("amqp://localhost", {}, recovery);
 connection.on("error_connection", (err) => {
-  // only fired at startup (after 3 failed attempts), or when a single entity could not be restored
+  // fired at startup after 3 failed attempts, or when a single exchange, queue, binding or consumer fails
   console.error("connection problem", err);
 });
 
@@ -415,7 +439,9 @@ Version 4.0 is a major release. This section lists everything you have to change
 
 ### Behaviour changes
 
-- **`error_connection` is broader.** Besides "recovery gave up" (finite `maxRetries`, with the give-up error) it also fires when a single exchange, queue or binding cannot be declared again, or a consumer cannot be registered again, during recovery. The connection itself is fine then, so do not treat the event as "connection dead".
+- **`error_connection` is broader.** Besides "recovery gave up" (finite `maxRetries`, with the give-up error) it also fires whenever a single exchange, queue or binding cannot be declared, or a consumer cannot be registered, whether at its first declaration or again during recovery. The connection itself is fine then, so do not treat the event as "connection dead".
+- **Gate startup with `completeConfiguration()`.** `connection.initialized` and `open_connection` only reflect the connection: an entity that fails on its own does not reject or delay them. `connection.completeConfiguration()` rejects while a declared exchange, queue or binding failed or an activated consumer was refused, also when you ask after the failure. See [Waiting for the topology at startup](#startup).
+- **`unbind` of an unknown binding resolves.** `queue.unbind()` and `exchange.unbind()` resolve when there is no such binding (for example when unbinding twice). In 3.x they threw a `TypeError`. Deleting a binding that is still being created again rejects its pending `initialized`.
 - **Pending `initialized` promises reject.** Every pending `initialized` (connection, exchanges, queues, bindings and consumers) rejects when you call `close()` and when recovery gives up. Reading the `initialized` of an entity after `close()` returns a rejected promise. Add error handling where you await them without one.
 - **Unsendable messages are dropped.** `send()` still returns `void`. Messages that can no longer be sent (recovery gave up, `close()` was called, the exchange or queue was closed or deleted) are logged at warn level and dropped. In 3.x a send to a closed entity threw a `TypeError`.
 - **Listener exceptions are logged.** Exceptions thrown by your event listeners are caught and logged at error level instead of propagating. With the default (empty) logger they are invisible, so pass a `loggerFactory`.
