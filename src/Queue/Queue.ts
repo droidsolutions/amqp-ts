@@ -442,20 +442,30 @@ export class Queue {
   }
 
   /**
-   * Completely removes the consumer handler and cancels the channel.
+   * Completely removes the consumer handler and cancels the channel. A consumer the broker refused has nothing to
+   * cancel, it is only removed.
    */
   public async stopConsumer(): Promise<void> {
     if (this._consumerStopping || this._consumerInitialized == undefined) {
       return;
     }
     this._consumerStopping = true;
-    await this._consumerInitialized;
-    await this._channel.cancel(this._consumerTag);
+    try {
+      const registered = await this._consumerInitialized.then(
+        () => true,
+        () => false,
+      );
+      if (registered) {
+        await this._channel.cancel(this._consumerTag);
+      }
+    } finally {
+      // a failed cancel can be retried
+      delete this._consumerStopping;
+    }
     delete this._consumerInitialized;
     delete this._consumerDeferred;
     delete this._consumer;
     delete this._consumerOptions;
-    delete this._consumerStopping;
     delete this._consumerChannel;
   }
 

@@ -1549,7 +1549,7 @@ describe("Test amqp-ts module", function () {
         expect(errors[0].message).to.contain("403");
       } finally {
         await raw.close();
-        // the queue's consumer failed, so the cleanup cannot delete it
+        // it was created on the raw connection, so do not rely on the cleanup
         await deleteOnBroker("queue", queueName);
       }
     });
@@ -1670,6 +1670,31 @@ describe("Test amqp-ts module", function () {
       await consumer;
       fanout.send(new Message("through-the-good-binding"));
       await within(waitFor("through-the-good-binding"), 5000, "the message through the good binding");
+    });
+
+    it("stops and deletes a queue whose consumer was refused", async function () {
+      const queueName = nextQueueName();
+      // another connection holds an exclusive consumer, so the broker refuses ours with 403
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const rawChannel = await raw.createChannel();
+        await rawChannel.assertQueue(queueName);
+        await rawChannel.consume(queueName, () => {}, { exclusive: true });
+
+        const queue = currentConnection.declareQueue(queueName);
+        await expect(queue.activateConsumer(() => {})).to.be.rejectedWith("403");
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await queue.initialized;
+
+        // nothing to cancel, so stopping resolves and clears the consumer
+        await within(queue.stopConsumer(), 2000, "stopConsumer");
+        expect(queue._consumerInitialized, "the consumer is cleared").to.equal(undefined);
+        await within(queue.delete(), 2000, "delete");
+        expect(currentConnection._queues[queueName], "the queue is deleted").to.equal(undefined);
+      } finally {
+        await raw.close();
+        await deleteOnBroker("queue", queueName);
+      }
     });
   });
 });
