@@ -117,6 +117,114 @@ describe("Test amqp-ts module", function () {
     await cleanup(currentConnection).catch(() => {});
   });
 
+  function nextMessage(
+    queue: Queue,
+    options: AmqpLib.Options.Consume = { noAck: true },
+    onMessage?: (message: Message) => void,
+  ) {
+    const received: string[] = [];
+    let notify: (() => void) | undefined;
+    const consumer = queue.activateConsumer((message: Message) => {
+      received.push(message.getContent() as string);
+      onMessage?.(message);
+      notify?.();
+    }, options);
+    const waitFor = async (content: string): Promise<void> => {
+      while (!received.includes(content)) {
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+      }
+    };
+
+    return { consumer, waitFor, received };
+  }
+
+  /** Waits until `current()` no longer returns `previous`, i.e. the entity started re-initializing. */
+  async function replaced(current: () => Promise<unknown>, previous: Promise<unknown>, timeoutMs = 10_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (current() === previous) {
+      if (Date.now() > deadline) {
+        throw new Error("the entity was never re-initialized");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    await current();
+  }
+
+  /** Deletes an exchange or a queue behind the library's back, through a separate connection. */
+  async function deleteOnBroker(kind: "exchange" | "queue", name: string) {
+    const raw = await AmqpLib.connect(ConnectionUrl);
+    try {
+      const rawChannel = await raw.createChannel();
+      rawChannel.on("error", () => {});
+      if (kind === "exchange") {
+        await rawChannel.deleteExchange(name);
+      } else {
+        await rawChannel.deleteQueue(name);
+      }
+    } finally {
+      await raw.close();
+    }
+  }
+
+  /** Creates an exchange or a queue behind the library's back, so it can be declared with `noCreate`. */
+  async function createOnBroker(kind: "exchange" | "queue", name: string) {
+    const raw = await AmqpLib.connect(ConnectionUrl);
+    try {
+      const rawChannel = await raw.createChannel();
+      if (kind === "exchange") {
+        await rawChannel.assertExchange(name, "fanout");
+      } else {
+        await rawChannel.assertQueue(name);
+      }
+    } finally {
+      await raw.close();
+    }
+  }
+
+  /** A logger factory whose loggers record level and message template of every entry. */
+  function recordingLoggerFactory() {
+    const entries: { level: string; msg: string; args: unknown[] }[] = [];
+    const record =
+      (level: string) =>
+      (objOrMsg: Record<string, unknown> | string, ...rest: unknown[]): void => {
+        if (typeof objOrMsg === "string") {
+          entries.push({ level, msg: objOrMsg, args: rest });
+        } else {
+          const [msg = "", ...args] = rest;
+          entries.push({ level, msg: typeof msg === "string" ? msg : "", args });
+        }
+      };
+    const logger: SimpleLogger = {
+      trace: record("trace"),
+      debug: record("debug"),
+      info: record("info"),
+      warn: record("warn"),
+      error: record("error"),
+      fatal: record("fatal"),
+    };
+    const factory: LoggerFactory = () => logger;
+
+    return { factory, entries };
+  }
+
+  /** Collects unhandled rejections until the returned function is called, which removes the listener again. */
+  function collectUnhandledRejections() {
+    const reasons: unknown[] = [];
+    const listener = (reason: unknown): void => {
+      reasons.push(reason);
+    };
+    process.on("unhandledRejection", listener);
+
+    return {
+      reasons,
+      stop: () => {
+        process.off("unhandledRejection", listener);
+      },
+    };
+  }
+
   describe("AMQP Connection class initialization", function () {
     it("should create a RabbitMQ connection", function (done) {
       // check result
@@ -257,7 +365,8 @@ describe("Test amqp-ts module", function () {
       await queue.activateConsumer((message: Message) => {
         const content = message.getContent();
         if (nacked) {
-         // expect(content).to.equal("Test Finished", "Content of acked message inside message handler does not match");
+          // expect(content).to.equal("Test Finished", "Content of acked message inside message handler does not
+          // match");
           message.ack();
           callbackResolveAcked(content);
         } else {
@@ -952,114 +1061,6 @@ describe("Test amqp-ts module", function () {
 
   describe("reconnect behaviour", function () {
     this.timeout(ReconnectTimeout);
-
-    function nextMessage(
-      queue: Queue,
-      options: AmqpLib.Options.Consume = { noAck: true },
-      onMessage?: (message: Message) => void,
-    ) {
-      const received: string[] = [];
-      let notify: (() => void) | undefined;
-      const consumer = queue.activateConsumer((message: Message) => {
-        received.push(message.getContent() as string);
-        onMessage?.(message);
-        notify?.();
-      }, options);
-      const waitFor = async (content: string): Promise<void> => {
-        while (!received.includes(content)) {
-          await new Promise<void>((resolve) => {
-            notify = resolve;
-          });
-        }
-      };
-
-      return { consumer, waitFor, received };
-    }
-
-    /** Waits until `current()` no longer returns `previous`, i.e. the entity started re-initializing. */
-    async function replaced(current: () => Promise<unknown>, previous: Promise<unknown>, timeoutMs = 10_000) {
-      const deadline = Date.now() + timeoutMs;
-      while (current() === previous) {
-        if (Date.now() > deadline) {
-          throw new Error("the entity was never re-initialized");
-        }
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      await current();
-    }
-
-    /** Deletes an exchange or a queue behind the library's back, through a separate connection. */
-    async function deleteOnBroker(kind: "exchange" | "queue", name: string) {
-      const raw = await AmqpLib.connect(ConnectionUrl);
-      try {
-        const rawChannel = await raw.createChannel();
-        rawChannel.on("error", () => {});
-        if (kind === "exchange") {
-          await rawChannel.deleteExchange(name);
-        } else {
-          await rawChannel.deleteQueue(name);
-        }
-      } finally {
-        await raw.close();
-      }
-    }
-
-    /** Creates an exchange or a queue behind the library's back, so it can be declared with `noCreate`. */
-    async function createOnBroker(kind: "exchange" | "queue", name: string) {
-      const raw = await AmqpLib.connect(ConnectionUrl);
-      try {
-        const rawChannel = await raw.createChannel();
-        if (kind === "exchange") {
-          await rawChannel.assertExchange(name, "fanout");
-        } else {
-          await rawChannel.assertQueue(name);
-        }
-      } finally {
-        await raw.close();
-      }
-    }
-
-    /** A logger factory whose loggers record level and message template of every entry. */
-    function recordingLoggerFactory() {
-      const entries: { level: string; msg: string; args: unknown[] }[] = [];
-      const record =
-        (level: string) =>
-        (objOrMsg: Record<string, unknown> | string, ...rest: unknown[]): void => {
-          if (typeof objOrMsg === "string") {
-            entries.push({ level, msg: objOrMsg, args: rest });
-          } else {
-            const [msg = "", ...args] = rest;
-            entries.push({ level, msg: typeof msg === "string" ? msg : "", args });
-          }
-        };
-      const logger: SimpleLogger = {
-        trace: record("trace"),
-        debug: record("debug"),
-        info: record("info"),
-        warn: record("warn"),
-        error: record("error"),
-        fatal: record("fatal"),
-      };
-      const factory: LoggerFactory = () => logger;
-
-      return { factory, entries };
-    }
-
-    /** Collects unhandled rejections until the returned function is called, which removes the listener again. */
-    function collectUnhandledRejections() {
-      const reasons: unknown[] = [];
-      const listener = (reason: unknown): void => {
-        reasons.push(reason);
-      };
-      process.on("unhandledRejection", listener);
-
-      return {
-        reasons,
-        stop: () => {
-          process.off("unhandledRejection", listener);
-        },
-      };
-    }
 
     it("consumer resumes after the broker kills the connection", async function () {
       const queue = currentConnection.declareQueue(nextQueueName());
