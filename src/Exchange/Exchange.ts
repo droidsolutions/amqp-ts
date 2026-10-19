@@ -3,7 +3,7 @@ import * as os from "node:os";
 import { ApplicationName } from "../amqp-ts.js";
 import { Binding } from "../Binding.js";
 import { Connection } from "../Connection/Connection.js";
-import type { Deferred } from "../Deferred.js";
+import { Deferred } from "../Deferred.js";
 import { SimpleLogger } from "../LoggerFactory.js";
 import { Message } from "../Message.js";
 import { DeclarationOptions } from "./DeclarationOptions.js";
@@ -49,6 +49,8 @@ export class Exchange {
   private _readyChannel: Channel | undefined;
   /** Why the exchange failed on its own, after which it is no longer declared. */
   private _failure: Error | undefined;
+  /** Settles {@link _initializedChanged} for those waiting on it. */
+  private _changed: Deferred<void> | undefined;
 
   /**
    * Initializes a new instance of the @see Exchange class.
@@ -106,7 +108,39 @@ export class Exchange {
     if (this._deferred.settled) {
       this._deferred = this.connection._createDeferred<InitializeResult>();
       this.initialized = this._deferred.promise;
+      this._notifyChanged();
     }
+  }
+
+  /**
+   * Whether the exchange or its connection is closed or deleted on purpose, so nothing initializes it again.
+   * @internal
+   */
+  public get _isClosedOnPurpose(): boolean {
+    return this._closing !== undefined || this._deleting !== undefined || this.connection._isStopped;
+  }
+
+  /**
+   * Resolves once {@link initialized} is no longer the given promise, or once nothing will replace it any more
+   * because the exchange or its connection is closed or deleted. Used by a send whose channel turned out to be closing.
+   * @internal
+   */
+  public _initializedChanged(ready: Promise<unknown>): Promise<void> {
+    if (this.initialized !== ready || this._isClosedOnPurpose) {
+      return Promise.resolve();
+    }
+    this._changed ??= new Deferred<void>();
+    return this._changed.promise;
+  }
+
+  /**
+   * Wakes up whoever waits in {@link _initializedChanged}.
+   * @internal
+   */
+  public _notifyChanged(): void {
+    const changed = this._changed;
+    this._changed = undefined;
+    changed?.resolve();
   }
 
   /**
@@ -217,6 +251,7 @@ export class Exchange {
   public delete(): Promise<void> {
     if (this._deleting === undefined) {
       this._deleting = (async (): Promise<void> => {
+        this._notifyChanged();
         await this.initialized;
         await Binding.removeBindingsContaining(this);
         await this._channel.deleteExchange(this._name, {});
@@ -233,6 +268,7 @@ export class Exchange {
   public close(): Promise<void> {
     if (this._closing === undefined) {
       this._closing = (async (): Promise<void> => {
+        this._notifyChanged();
         await this.initialized;
         await Binding.removeBindingsContaining(this);
         delete this.connection._exchanges[this._name]; // remove the exchange from our administration

@@ -2032,5 +2032,48 @@ describe("Test amqp-ts module", function () {
         await deleteOnBroker("queue", queueName);
       }
     });
+
+    it("publishes a message sent while amqplib closes the connection after a protocol error", async function () {
+      const queue = currentConnection.declareQueue(nextQueueName());
+      const { consumer, waitFor } = nextMessage(queue);
+      await consumer;
+      await currentConnection.completeConfiguration();
+      await currentConnection.initialized;
+
+      const reestablished = once(currentConnection, "re_established_connection");
+      // what amqplib does on a protocol error: until the broker confirmed the close, publishing throws
+      const amqpConnection = currentConnection.getConnection.connection as unknown as {
+        closeWithError(reason: string, code: number, error: Error): void;
+      };
+      amqpConnection.closeWithError("Forced by the test", 541, new Error("forced by the test"));
+      queue.send(new Message("while-closing"));
+      await within(reestablished, 10_000, "re_established_connection");
+
+      await within(waitFor("while-closing"), 5000, "the message sent while the connection was closing");
+    });
+
+    it("still drops a message sent to a closed queue or on a closed connection", async function () {
+      const { factory, entries } = recordingLoggerFactory();
+      const connection = new Connection(ConnectionUrl, {}, { maxRetries: 5, initialDelay: 100 }, factory);
+      const queueName = nextQueueName();
+      const exchangeName = nextExchangeName();
+      try {
+        const queue = connection.declareQueue(queueName);
+        const exchange = connection.declareExchange(exchangeName, "fanout");
+        await connection.completeConfiguration();
+        await queue.close();
+        queue.send(new Message("after queue.close"));
+        await connection.close();
+        exchange.send(new Message("after connection.close"));
+
+        await sleep(300);
+        const dropped = entries.filter((entry) => entry.level === "warn" && entry.msg.startsWith("Dropping message"));
+        expect(dropped, "one warn entry per dropped message").to.have.length(2);
+      } finally {
+        await connection.close();
+        await deleteOnBroker("queue", queueName);
+        await deleteOnBroker("exchange", exchangeName);
+      }
+    });
   });
 });

@@ -184,6 +184,14 @@ export class Connection extends EventEmitter {
   }
 
   /**
+   * Whether the connection was closed or recovery gave up, so nothing is initialized any more.
+   * @internal
+   */
+  public get _isStopped(): boolean {
+    return this._isClosing || this._stopError !== undefined;
+  }
+
+  /**
    * Whether the given model has closed.
    * @internal
    */
@@ -222,9 +230,11 @@ export class Connection extends EventEmitter {
     }
     for (const exchange of Object.values(this._exchanges)) {
       exchange._rejectPending(err);
+      exchange._notifyChanged();
     }
     for (const queue of Object.values(this._queues)) {
       queue._rejectPending(err);
+      queue._notifyChanged();
     }
     for (const binding of Object.values(this._bindings)) {
       binding._rejectPending(err);

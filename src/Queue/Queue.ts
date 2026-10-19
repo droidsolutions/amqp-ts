@@ -4,7 +4,7 @@ import type { Channel, ChannelModel, ConsumeMessage, Options } from "amqplib";
 import type { AmqpProperties } from "../AmqpProperties.js";
 import { Binding } from "../Binding.js";
 import { Connection } from "../Connection/Connection.js";
-import type { Deferred } from "../Deferred.js";
+import { Deferred } from "../Deferred.js";
 import { Exchange } from "../Exchange/Exchange.js";
 import { SimpleLogger } from "../LoggerFactory.js";
 import { Message } from "../Message.js";
@@ -70,6 +70,8 @@ export class Queue {
   private _consumerRefusedIn: number | undefined;
   /** Why the queue failed on its own, after which it is no longer declared. */
   private _failure: Error | undefined;
+  /** Settles {@link _initializedChanged} for those waiting on it. */
+  private _changed: Deferred<void> | undefined;
   /** Counts deliveries; bound once so it can be removed again. */
   private readonly _onDelivery = (): void => {
     this.connection._increaseCounter("receivedMessages");
@@ -145,7 +147,39 @@ export class Queue {
     if (this._deferred.settled) {
       this._deferred = this.connection._createDeferred<InitializeResult>();
       this.initialized = this._deferred.promise;
+      this._notifyChanged();
     }
+  }
+
+  /**
+   * Whether the queue or its connection is closed or deleted on purpose, so nothing initializes it again.
+   * @internal
+   */
+  public get _isClosedOnPurpose(): boolean {
+    return this._closing !== undefined || this._deleting !== undefined || this.connection._isStopped;
+  }
+
+  /**
+   * Resolves once {@link initialized} is no longer the given promise, or once nothing will replace it any more
+   * because the queue or its connection is closed or deleted. Used by a send whose channel turned out to be closing.
+   * @internal
+   */
+  public _initializedChanged(ready: Promise<unknown>): Promise<void> {
+    if (this.initialized !== ready || this._isClosedOnPurpose) {
+      return Promise.resolve();
+    }
+    this._changed ??= new Deferred<void>();
+    return this._changed.promise;
+  }
+
+  /**
+   * Wakes up whoever waits in {@link _initializedChanged}.
+   * @internal
+   */
+  public _notifyChanged(): void {
+    const changed = this._changed;
+    this._changed = undefined;
+    changed?.resolve();
   }
 
   /**
@@ -549,6 +583,7 @@ export class Queue {
   delete(): Promise<DeleteResult> {
     if (this._deleting === undefined) {
       this._deleting = (async (): Promise<DeleteResult> => {
+        this._notifyChanged();
         await this.initialized;
         await Binding.removeBindingsContaining(this);
         await this.stopConsumer();
@@ -568,6 +603,7 @@ export class Queue {
   close(): Promise<void> {
     if (this._closing === undefined) {
       this._closing = (async (): Promise<void> => {
+        this._notifyChanged();
         await this.initialized;
         await Binding.removeBindingsContaining(this);
         await this.stopConsumer();

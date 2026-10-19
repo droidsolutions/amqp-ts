@@ -71,9 +71,10 @@ export class Message {
    * Publishes the message on the destination's channel once the destination is initialized. Appends the current
    * @see properties object and the @see content of the message.
    *
-   * If the channel turns out to be closed (the connection or the channel was lost), the message is published again
-   * once the destination is initialized again. A message that can never be published (the destination failed,
-   * recovery gave up or the connection was closed) is logged at warn level and dropped.
+   * If the channel turns out to be closed or closing (the connection or the channel was lost, or amqplib is closing
+   * the connection after a protocol error), the message is published again once the destination is initialized
+   * again. A message that can never be published (the destination failed or was closed or deleted, recovery gave up
+   * or the connection was closed) is logged at warn level and dropped.
    *
    * @param destination The destination of the message.
    * @param routingKey An optional routing key.
@@ -118,12 +119,15 @@ export class Message {
           log().error({ err }, "Publishing to '%s' failed, dropping the message: %s", destination.name, reason);
           return;
         }
-        if (destination.initialized === ready) {
-          // the channel was closed on purpose (close() or delete()), nothing re-initializes it
+        if (destination._isClosedOnPurpose) {
+          // close() or delete() of the destination or the connection: nothing re-initializes it
           log().warn({ err }, "Dropping message to '%s', its channel is closed.", destination.name);
           return;
         }
+        // the channel or the connection is closed or closing otherwise (amqplib closes the connection itself on a
+        // protocol error, and publishing throws before the close arrives); once it is closed initialized is replaced
         log().debug({ err }, "Channel of '%s' closed, publishing again once it is re-initialized.", destination.name);
+        await destination._initializedChanged(ready);
       }
     }
   }
