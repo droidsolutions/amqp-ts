@@ -52,7 +52,7 @@ describe("Test amqp-ts module", function () {
     const conn = new Connection(
       ConnectionUrl,
       { clientProperties: { connection_name: currentConnectionName } },
-      { retries: 5, interval: 1500 },
+      { maxRetries: 5, initialDelay: 100 },
       loggerFactory,
     );
     connections.push(conn);
@@ -145,6 +145,19 @@ describe("Test amqp-ts module", function () {
           // failed to create the AMQP connection
           done(new Error("Failed to create a new AMQP Connection."));
         });
+    });
+
+    it("accepts amqplib RecoveryOptions", async function () {
+      const connection = new Connection("amqp://localhost:1", {}, { maxRetries: 0, initialDelay: 10 }, loggerFactory);
+      let errors = 0;
+      connection.on("error_connection", () => {
+        errors++;
+      });
+
+      await expect(connection.initialized).to.be.rejected;
+      // leave room for a duplicate event before counting
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(errors).to.equal(1);
     });
   });
 
@@ -1044,6 +1057,68 @@ describe("Test amqp-ts module", function () {
 
       queue.send(new Message("second"));
       await waitFor("second");
+    });
+
+    it("getConnection returns the current model and changes after a kill", async function () {
+      await currentConnection.initialized;
+      const before = currentConnection.getConnection;
+      // a promise-API ChannelModel: createChannel returns a promise
+      const opening = before.createChannel();
+      expect(opening).to.be.instanceOf(Promise);
+      await (await opening).close();
+
+      const reestablished = once(currentConnection, "re_established_connection");
+      expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      await reestablished;
+
+      const after = currentConnection.getConnection;
+      expect(after).to.not.equal(undefined);
+      expect(after).to.not.equal(before);
+    });
+
+    it("declares an entity created while disconnected after the next connect", async function () {
+      await currentConnection.initialized;
+      const queueName = nextQueueName();
+
+      expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      const queue = currentConnection.declareQueue(queueName);
+
+      const result = await queue.initialized;
+      expect(result.queue).to.equal(queueName);
+    });
+
+    it("survives a channel error event without a user listener", async function () {
+      const exchangeName = nextExchangeName();
+      const exchange = currentConnection.declareExchange(exchangeName, "fanout");
+      await exchange.initialized;
+
+      const raw = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const rawChannel = await raw.createChannel();
+        rawChannel.on("error", () => {});
+        await rawChannel.deleteExchange(exchangeName);
+
+        // publishing to the deleted exchange makes the broker close the exchange's channel with 404; an "error"
+        // event without a listener would be an uncaught exception, which fails this test
+        const first = exchange.initialized;
+        const model = currentConnection.getConnection;
+        exchange.send(new Message("into the void"));
+
+        const deadline = Date.now() + 10_000;
+        while (exchange.initialized === first) {
+          if (Date.now() > deadline) {
+            throw new Error("the exchange was never re-initialized after its channel closed");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        await exchange.initialized;
+
+        // the re-initialization declared the exchange again, on the same connection
+        await rawChannel.checkExchange(exchangeName);
+        expect(currentConnection.getConnection, "no reconnect of the whole connection").to.equal(model);
+      } finally {
+        await raw.close();
+      }
     });
   });
 });

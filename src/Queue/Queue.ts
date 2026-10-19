@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import * as AmqpLib from "amqplib/callback_api";
+import type { Channel, ChannelModel, ConsumeMessage, Options } from "amqplib";
 import type { AmqpProperties } from "../AmqpProperties.js";
 import { DIRECT_REPLY_TO_QUEUE } from "../amqp-ts.js";
 import { Binding } from "../Binding.js";
 import { Connection } from "../Connection/Connection.js";
+import { Deferred } from "../Deferred.js";
 import { Exchange } from "../Exchange/Exchange.js";
 import { SimpleLogger } from "../LoggerFactory.js";
 import { Message } from "../Message.js";
@@ -15,20 +16,40 @@ import { StartConsumerResult } from "./StartConsumerResult.js";
 
 /** Represents an AQMP queue. */
 export class Queue {
-  /** A promise that resolves once the conneciton is initialized and the channel is created. */
+  /**
+   * A promise that resolves once the connection is initialized and the queue is declared on its channel. It is
+   * replaced by a pending promise while the queue is re-initialized after a lost connection or a closed channel.
+   */
   public initialized: Promise<InitializeResult>;
   /** The AMQP channel. */
-  public _channel: AmqpLib.Channel;
+  public _channel: Channel;
   /** A promise that resolves when a consumer handler is registered and initialized. */
   public _consumerInitialized: Promise<StartConsumerResult>;
   private _name: string;
-  _consumer: (msg: any, channel?: AmqpLib.Channel) => any;
-  private _consumerOptions: AmqpLib.Options.Consume & { properties?: AmqpProperties };
+  _consumer: (msg: any, channel?: Channel) => any;
+  private _consumerOptions: Options.Consume & { properties?: AmqpProperties };
   private _consumerTag: string;
   private _consumerStopping: boolean;
   private _deleting: Promise<DeleteResult>;
   private _closing: Promise<void>;
   private log: SimpleLogger;
+  private _deferred: Deferred<InitializeResult>;
+  private _consumerDeferred: Deferred<StartConsumerResult> | undefined;
+  /** The generation of the last initialization, and that initialization. */
+  private _generation: number | undefined;
+  private _initializing: Promise<void> = Promise.resolve();
+  /** Changes with every initialization, so a superseded one can tell. */
+  private _attempt = 0;
+  /** The channel the queue was successfully declared on, and its model. */
+  private _readyChannel: Channel | undefined;
+  private _readyModel: ChannelModel | undefined;
+  /** The channel the consumer is registered on, or being registered on. */
+  private _consumerChannel: Channel | undefined;
+  private _consuming: Promise<void> = Promise.resolve();
+  /** Counts deliveries; bound once so it can be removed again. */
+  private readonly _onDelivery = (): void => {
+    this.connection._increaseCounter("receivedMessages");
+  };
 
   /** Returns the name of the queue. */
   public get name(): string {
@@ -49,48 +70,150 @@ export class Queue {
     this.log = this.connection.loggerFactory(this.constructor, { queue: name });
 
     this._name = name;
+    this._deferred = new Deferred<InitializeResult>();
+    this.initialized = this._deferred.promise;
     this.connection._queues[this._name] = this;
-    this._initialize();
+    // while disconnected the next connect initializes it
+    if (this.connection._model) {
+      this._initialize(this.connection._model, this.connection._generation).catch(() => {});
+    }
   }
 
-  /** Waits until the connection is initialized then creates a channel and declares the queue on it. */
-  _initialize(): void {
-    this.initialized = new Promise<InitializeResult>((resolve, reject) => {
-      this.connection.initialized
-        .then(() => {
-          this.connection.connection.createChannel((createChannelError, channel) => {
-            /* istanbul ignore if */
-            if (createChannelError) {
-              reject(createChannelError);
-            } else {
-              this._channel = channel;
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-              this._channel.on("delivery", this.handleReceivedMessageEvent.bind(this));
-              const callback = (err: Error, ok: InitializeResult): void => {
-                /* istanbul ignore if */
-                if (err) {
-                  this.log.error({ error: err }, "Failed to create queue '%s'.", this._name);
-                  delete this.connection._queues[this._name];
-                  reject(err);
-                } else {
-                  if (this.options.prefetch) {
-                    this._channel.prefetch(this.options.prefetch);
-                  }
-                  resolve(ok);
-                }
-              };
-              if (this.options.noCreate) {
-                this._channel.checkQueue(this._name, callback);
-              } else {
-                this._channel.assertQueue(this._name, this.options, callback);
-              }
-            }
-          });
-        })
-        .catch((err) => {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          this.log.warn(err, "Channel failure, error caused during connection!");
-        });
+  /**
+   * Creates a channel on the given model and declares the queue on it, then settles {@link initialized}. Does nothing
+   * if the queue was already initialized for the given generation. The consumer is started by
+   * {@link _initializeConsumer}.
+   * @internal
+   */
+  public _initialize(model: ChannelModel, generation: number): Promise<void> {
+    if (this.connection._queues[this._name] !== this) {
+      // failed, closed or deleted: only a new declaration brings it back
+      return Promise.reject(new Error(`Queue '${this._name}' is no longer declared`));
+    }
+    if (this._generation !== generation) {
+      this._generation = generation;
+      this._initializing = this._declare(model, ++this._attempt);
+    }
+    return this._initializing;
+  }
+
+  /**
+   * Replaces a settled {@link initialized} (and consumer promise) with a pending one, until the queue is initialized
+   * again.
+   * @internal
+   */
+  public _invalidate(): void {
+    this._readyChannel = undefined;
+    if (this._deferred.settled) {
+      this._deferred = new Deferred<InitializeResult>();
+      this.initialized = this._deferred.promise;
+    }
+    if (this._consumerDeferred?.settled) {
+      this._consumerDeferred = new Deferred<StartConsumerResult>();
+      this._consumerInitialized = this._consumerDeferred.promise;
+    }
+  }
+
+  /**
+   * Registers the consumer, if there is one, on the channel the queue is declared on, unless it already is
+   * registered there.
+   * @internal
+   */
+  public _initializeConsumer(): Promise<void> {
+    const channel = this._readyChannel;
+    if (this._consumer === undefined || channel === undefined || channel === this._consumerChannel) {
+      return this._consuming;
+    }
+    this._consumerChannel = channel;
+    this._consuming = this._consume(channel, this._readyModel);
+    return this._consuming;
+  }
+
+  private async _declare(model: ChannelModel, attempt: number): Promise<void> {
+    try {
+      const channel = await model.createChannel();
+      channel.on("error", (err: Error) => {
+        this.log.warn({ err }, "Channel of queue '%s' failed: %s", this._name, err.message);
+      });
+      channel.on("close", () => this._onChannelClose(channel, model));
+      if (attempt !== this._attempt) {
+        await channel.close().catch(() => {});
+        return;
+      }
+      this._channel = channel;
+      channel.on("delivery", this._onDelivery);
+
+      const ok = this.options.noCreate
+        ? await channel.checkQueue(this._name)
+        : await channel.assertQueue(this._name, this.options);
+      if (this.options.prefetch) {
+        await channel.prefetch(this.options.prefetch);
+      }
+      if (attempt !== this._attempt) {
+        await channel.close().catch(() => {});
+        return;
+      }
+      this._readyChannel = channel;
+      this._readyModel = model;
+      this._deferred.resolve(ok);
+    } catch (err) {
+      if (attempt !== this._attempt) {
+        return;
+      }
+      if (this.connection._isModelClosed(model)) {
+        // the next connect initializes it again, until then initialized stays pending
+        this.log.debug({ err }, "Connection lost while initializing queue '%s'.", this._name);
+        throw err;
+      }
+      this.log.error({ err }, "Failed to create queue '%s'.", this._name);
+      delete this.connection._queues[this._name];
+      this._deferred.reject(err as Error);
+      throw err;
+    }
+  }
+
+  private async _consume(channel: Channel, model: ChannelModel): Promise<void> {
+    try {
+      const ok = await channel.consume(this._name, this._createConsumerWrapper(channel), this._consumerOptions);
+      if (channel !== this._consumerChannel) {
+        return;
+      }
+      this._consumerTag = ok.consumerTag;
+      this._consumerDeferred.resolve(ok);
+    } catch (err) {
+      if (channel !== this._consumerChannel || this.connection._isModelClosed(model)) {
+        // superseded, or the next connect registers it again
+        throw err;
+      }
+      this.log.error({ err }, "Failed to start the consumer of queue '%s'.", this._name);
+      this._consumerDeferred.reject(err as Error);
+      throw err;
+    }
+  }
+
+  /**
+   * A channel that closes while the connection stays up (for example after a double ack) is re-created, the queue
+   * declared again and its consumer registered again. Closes during a failed declaration or consumer registration, on
+   * a lost connection or caused by {@link close} or {@link delete} are left alone.
+   */
+  private _onChannelClose(channel: Channel, model: ChannelModel): void {
+    if (channel !== this._readyChannel || this._closing !== undefined || this._deleting !== undefined) {
+      return;
+    }
+    // a consumer registration that the broker refused closes the channel as well; retrying it would loop
+    const consumeFailed = channel === this._consumerChannel && this._consumerDeferred?.settled === false;
+    const generation = this._generation;
+    this._invalidate();
+    // the connection emits its own close right after closing its channels, so look at it once that happened
+    queueMicrotask(() => {
+      if (!this.connection._isModelUsable(model) || this._generation !== generation) {
+        return;
+      }
+      this.log.warn("Channel of queue '%s' closed, re-initializing it.", this._name);
+      this._generation = undefined;
+      this._initialize(model, generation)
+        .then(() => (consumeFailed ? undefined : this._initializeConsumer()))
+        .catch(() => {});
     });
   }
 
@@ -107,29 +230,30 @@ export class Queue {
     return new Promise<Message>((resolve, reject) => {
       const processRpc = (): void => {
         let consumerTag: string;
-        this._channel.consume(
-          DIRECT_REPLY_TO_QUEUE,
-          (resultMsg) => {
-            this._channel.cancel(consumerTag);
-            const result = new Message(resultMsg.content, resultMsg.properties);
-            result.fields = resultMsg.fields;
-            resolve(result);
-          },
-          { noAck: true },
-          (err: Error, ok) => {
-            /* istanbul ignore if */
-            if (err) {
-              reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
-            } else {
+        this._channel
+          .consume(
+            DIRECT_REPLY_TO_QUEUE,
+            (resultMsg) => {
+              this._channel.cancel(consumerTag).catch(() => {});
+              const result = new Message(resultMsg.content, resultMsg.properties);
+              result.fields = resultMsg.fields;
+              resolve(result);
+            },
+            { noAck: true },
+          )
+          .then(
+            (ok) => {
               // send the rpc request
               consumerTag = ok.consumerTag;
               const message = new Message(requestParameters, {
                 replyTo: DIRECT_REPLY_TO_QUEUE,
               });
               message.sendTo(this);
-            }
-          },
-        );
+            },
+            /* istanbul ignore next */ (err: Error) => {
+              reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
+            },
+          );
       };
       this.initialized.then(processRpc);
     });
@@ -144,23 +268,16 @@ export class Queue {
    */
   prefetch(count: number): void {
     this.initialized.then(() => {
-      this._channel.prefetch(count);
+      this._channel.prefetch(count).catch((err: Error) => {
+        this.log.warn({ err }, "Setting the prefetch of queue '%s' failed.", this._name);
+      });
       this.options.prefetch = count;
     });
   }
 
-  recover(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.initialized.then(() => {
-        this._channel.recover((err, _ok) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(null);
-          }
-        });
-      });
-    });
+  async recover(): Promise<void> {
+    await this.initialized;
+    await this._channel.recover();
   }
 
   /**
@@ -175,7 +292,7 @@ export class Queue {
    */
   public activateConsumer(
     onMessage: (msg: Message) => any,
-    options: AmqpLib.Options.Consume & { properties?: AmqpProperties } = {},
+    options: Options.Consume & { properties?: AmqpProperties } = {},
   ): Promise<StartConsumerResult> {
     if (this._consumerInitialized !== undefined) {
       return Promise.reject(new Error("amqp-ts Queue.activateConsumer error: consumer already defined"));
@@ -183,22 +300,29 @@ export class Queue {
 
     this._consumerOptions = options;
     this._consumer = onMessage;
-    this._initializeConsumer();
+    this._consumerDeferred = new Deferred<StartConsumerResult>();
+    this._consumerInitialized = this._consumerDeferred.promise;
+    // registers right away if the queue is ready, otherwise once it is; a reconnect registers it as well
+    this.initialized.then(
+      () => this._initializeConsumer().catch(() => {}),
+      (err: Error) => this._consumerDeferred?.reject(err),
+    );
 
     return this._consumerInitialized;
   }
 
-  /**
-   * Initializes the consumer with a handler function. Resolves the @see _consumerInitialized promise once the handler
-   * is bound.
-   */
-  _initializeConsumer(): void {
-    const activateConsumerWrapper = (msg: AmqpLib.Message): void => {
+  /** Wraps the consumer handler for messages delivered on the given channel. */
+  private _createConsumerWrapper(channel: Channel): (msg: ConsumeMessage | null) => void {
+    return (msg: ConsumeMessage | null): void => {
+      if (msg === null) {
+        this.log.warn("The consumer of queue '%s' was cancelled by the broker.", this._name);
+        return;
+      }
       try {
         const message = new Message(msg.content, msg.properties);
         message.fields = msg.fields;
         message._message = msg;
-        message._channel = this._channel;
+        message._channel = channel;
         const result = this._consumer(message);
         // convert the result to a promise if it isn't one already
         Promise.resolve(result)
@@ -211,10 +335,10 @@ export class Queue {
               resultValue.properties.correlationId = msg.properties.correlationId;
 
               this.log.debug("Replying directly to queue %s", msg.properties.replyTo);
-              this._channel.sendToQueue(
+              channel.sendToQueue(
                 msg.properties.replyTo as string,
                 resultValue.content as Buffer,
-                resultValue.properties as AmqpLib.Options.Publish,
+                resultValue.properties as Options.Publish,
               );
             }
           })
@@ -236,46 +360,24 @@ export class Queue {
         );
       }
     };
-
-    this._consumerInitialized = new Promise<StartConsumerResult>((resolve, reject) => {
-      this.initialized.then(() => {
-        this._channel.consume(this._name, activateConsumerWrapper, this._consumerOptions, (err, ok) => {
-          /* istanbul ignore if */
-          if (err) {
-            reject(err);
-          } else {
-            this._consumerTag = ok.consumerTag;
-            resolve(ok);
-          }
-        });
-      });
-    });
   }
 
   /**
    * Completely removes the consumer handler and cancels the channel.
    */
-  public stopConsumer(): Promise<void> {
+  public async stopConsumer(): Promise<void> {
     if (this._consumerStopping || this._consumerInitialized == undefined) {
-      return Promise.resolve();
+      return;
     }
     this._consumerStopping = true;
-    return new Promise<void>((resolve, reject) => {
-      this._consumerInitialized.then(() => {
-        this._channel.cancel(this._consumerTag, (err, _ok) => {
-          /* istanbul ignore if */
-          if (err) {
-            reject(err);
-          } else {
-            delete this._consumerInitialized;
-            delete this._consumer;
-            delete this._consumerOptions;
-            delete this._consumerStopping;
-            resolve();
-          }
-        });
-      });
-    });
+    await this._consumerInitialized;
+    await this._channel.cancel(this._consumerTag);
+    delete this._consumerInitialized;
+    delete this._consumerDeferred;
+    delete this._consumer;
+    delete this._consumerOptions;
+    delete this._consumerStopping;
+    delete this._consumerChannel;
   }
 
   /**
@@ -283,41 +385,16 @@ export class Queue {
    */
   delete(): Promise<DeleteResult> {
     if (this._deleting === undefined) {
-      this._deleting = new Promise<DeleteResult>((resolve, reject) => {
-        this.initialized
-          .then(() => {
-            return Binding.removeBindingsContaining(this);
-          })
-          .then(() => {
-            return this.stopConsumer();
-          })
-          .then(() => {
-            return this._channel.deleteQueue(this._name, {}, (deleteQueueError: Error, ok: DeleteResult) => {
-              /* istanbul ignore if */
-              if (deleteQueueError) {
-                reject(deleteQueueError);
-              } else {
-                delete this.initialized; // invalidate queue
-                delete this.connection._queues[this._name]; // remove the queue from our administration
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-                this._channel.removeListener("delivery", this.handleReceivedMessageEvent.bind(this));
-                this._channel.close((channelCloseError) => {
-                  /* istanbul ignore if */
-                  if (channelCloseError) {
-                    reject(channelCloseError);
-                  } else {
-                    delete this._channel;
-                    delete this.connection;
-                    resolve(ok);
-                  }
-                });
-              }
-            });
-          })
-          .catch((err) => {
-            reject(err as Error);
-          });
-      });
+      this._deleting = (async (): Promise<DeleteResult> => {
+        await this.initialized;
+        await Binding.removeBindingsContaining(this);
+        await this.stopConsumer();
+        const ok = await this._channel.deleteQueue(this._name, {});
+        delete this.connection._queues[this._name]; // remove the queue from our administration
+        this._channel.removeListener("delivery", this._onDelivery);
+        await this._channel.close();
+        return ok;
+      })();
     }
     return this._deleting;
   }
@@ -327,34 +404,14 @@ export class Queue {
    */
   close(): Promise<void> {
     if (this._closing === undefined) {
-      this._closing = new Promise<void>((resolve, reject) => {
-        this.initialized
-          .then(() => {
-            return Binding.removeBindingsContaining(this);
-          })
-          .then(() => {
-            return this.stopConsumer();
-          })
-          .then(() => {
-            delete this.initialized; // invalidate queue
-            delete this.connection._queues[this._name]; // remove the queue from our administration
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            this._channel.removeListener("delivery", this.handleReceivedMessageEvent.bind(this));
-            this._channel.close((err) => {
-              /* istanbul ignore if */
-              if (err) {
-                reject(err);
-              } else {
-                delete this._channel;
-                delete this.connection;
-                resolve(null);
-              }
-            });
-          })
-          .catch((err) => {
-            reject(err as Error);
-          });
-      });
+      this._closing = (async (): Promise<void> => {
+        await this.initialized;
+        await Binding.removeBindingsContaining(this);
+        await this.stopConsumer();
+        delete this.connection._queues[this._name]; // remove the queue from our administration
+        this._channel.removeListener("delivery", this._onDelivery);
+        await this._channel.close();
+      })();
     }
     return this._closing;
   }
@@ -380,9 +437,5 @@ export class Queue {
    */
   public unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
     return this.connection._bindings[Binding.id(this, source, pattern)].delete();
-  }
-
-  private handleReceivedMessageEvent(_args: any[]): void {
-    this.connection._increaseCounter("receivedMessages");
   }
 }

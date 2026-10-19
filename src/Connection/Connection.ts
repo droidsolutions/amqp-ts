@@ -1,6 +1,7 @@
-import * as AmqpLib from "amqplib/callback_api";
+import { connect, type ChannelModel, type RecoveringChannelModel, type SocketOptions } from "amqplib";
 import { EventEmitter } from "node:events";
 import { Binding } from "../Binding.js";
+import { Deferred } from "../Deferred.js";
 import { DeclarationOptions as ExchangeDeclarationOptions } from "../Exchange/DeclarationOptions.js";
 import { Exchange } from "../Exchange/Exchange.js";
 import { ExchangeType } from "../Exchange/ExchangeType.js";
@@ -8,13 +9,28 @@ import { EmtpyLogger, LoggerFactory, SimpleLogger } from "../LoggerFactory.js";
 import { DeclarationOptions as QueueDeclarationOptions } from "../Queue/DeclarationOptions.js";
 import { Queue } from "../Queue/Queue.js";
 import { ConnectionMetrics } from "./ConnectionMetrics.js";
-import { ReconnectStrategy } from "./ReconnectStrategy.js";
+import { RecoveryOptions } from "./RecoveryOptions.js";
 import { Topology } from "./Topology.js";
 
 export class Connection extends EventEmitter {
+  /**
+   * Resolves once the connection is established and the declared topology is initialized. It is replaced by a pending
+   * promise when the connection is lost and resolves again after the next successful reconnect. It rejects when
+   * recovery gives up or the connection is closed before it was established.
+   */
   public initialized: Promise<void>;
-  public connection: AmqpLib.Connection;
   public isConnected = false;
+  /**
+   * The current underlying amqplib model, `undefined` while disconnected.
+   * @internal
+   */
+  public _model: ChannelModel | undefined;
+  /**
+   * Identifies the current underlying model. Changes on each successful connect, so entities can tell whether they
+   * are initialized on the current connection.
+   * @internal
+   */
+  public _generation = 0;
   public _exchanges: {
     [id: string]: Exchange;
   };
@@ -25,13 +41,17 @@ export class Connection extends EventEmitter {
     [id: string]: Binding;
   };
 
-  private url: string;
-  private socketOptions: any;
-  private reconnectStrategy: ReconnectStrategy;
-  private connectedBefore = false;
-  private _retry: number;
-  private _rebuilding = false;
+  private _deferred: Deferred<void>;
+  private _recovering: Promise<RecoveringChannelModel>;
+  /** Counter for connect attempts that reach `setup`; each of them gets its own generation. */
+  private _lastGeneration = 0;
+  /** The model `setup` is currently running for, and its generation. */
+  private _setupModel: ChannelModel | undefined;
+  private _setupGeneration = 0;
+  private _closedModels = new WeakSet<ChannelModel>();
+  private _connectedBefore = false;
   private _isClosing = false;
+  private _closing: Promise<void> | undefined;
   private log: SimpleLogger;
   private _sentMessagesCounter = 0;
   private _receivedMessagesCounter = 0;
@@ -39,14 +59,15 @@ export class Connection extends EventEmitter {
   /**
    *
    * @param url The url to RabbitMQ
-   * @param socketOptions Socket options are passed to {@link AmqpLib.connect}.
-   * @param reconnectStrategy Options specifying the reconnect strategy.
+   * @param socketOptions Socket options are passed to amqplib's `connect`.
+   * @param recovery Options for the automatic reconnect, passed to amqplib's connection recovery. By default it retries
+   * forever with exponential backoff.
    * @param loggerFactory A factory function that returns a logger.
    */
   constructor(
     url = "amqp://localhost",
-    socketOptions: any = {},
-    reconnectStrategy: ReconnectStrategy = { retries: 0, interval: 1500 },
+    socketOptions: SocketOptions = {},
+    recovery: RecoveryOptions = {},
     public loggerFactory?: LoggerFactory,
   ) {
     super();
@@ -55,124 +76,179 @@ export class Connection extends EventEmitter {
     }
     this.log = this.loggerFactory(this.constructor, { module: "amqp-ts" });
 
-    this.url = url;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    this.socketOptions = socketOptions;
-    this.reconnectStrategy = reconnectStrategy;
     this._exchanges = {};
     this._queues = {};
     this._bindings = {};
-    this.rebuildConnection();
-  }
+    this._deferred = new Deferred<void>();
+    this.initialized = this._deferred.promise;
 
-  public tryToConnect(thisConnection: Connection, retry: number, callback: (err: any) => void): void {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    AmqpLib.connect(thisConnection.url, thisConnection.socketOptions, (err: Error, connection) => {
-      /* istanbul ignore if */
-      if (err) {
-        thisConnection.isConnected = false;
-        // only do every retry once, amqplib can return multiple connection errors for one connection request (error?)
-        if (retry <= this._retry) {
-          //amqpts_log.log("warn" , "Double retry " + retry + ", skipping.", {module: "amqp-ts"});
-          return;
-        }
-        this.log.warn({ err }, "Connection failed.");
-        this._retry = retry;
-        if (thisConnection.reconnectStrategy.retries === 0 || thisConnection.reconnectStrategy.retries > retry) {
-          this.log.warn("Connection retry %d in %d ms", retry + 1, thisConnection.reconnectStrategy.interval);
-          thisConnection.emit("trying_connect");
-          setTimeout(
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            thisConnection.tryToConnect.bind(this),
-            thisConnection.reconnectStrategy.interval,
-            thisConnection,
-            retry + 1,
-            callback,
-          );
-        } else {
-          //no reconnect strategy, or retries exhausted, so return the error
-          this.log.warn("Connection failed, exiting: No connection retries left (retry %d).", retry);
-          callback(err);
-        }
-      } else {
-        const restart = (err: Error): void => {
-          this.log.debug({ err }, "Connection error occurred.");
-          connection.removeListener("error", restart);
-          //connection.removeListener("end", restart); // not sure this is needed
-          thisConnection._rebuildAll(err); //try to rebuild the topology when the connection  unexpectedly closes
-        };
-        const onClose = (): void => {
-          connection.removeListener("close", onClose);
-          if (!this._isClosing) {
-            thisConnection.emit("lost_connection");
-            restart(new Error("Connection closed by remote host"));
-          }
-        };
-        connection.on("error", restart);
-        connection.on("close", onClose);
-        //connection.on("end", restart); // not sure this is needed
-        thisConnection.connection = connection;
-        thisConnection.isConnected = true;
-        callback(null);
-      }
+    // waitForConnect: false resolves right away and defers the first attempt, so the listeners are attached in time
+    this._recovering = connect(url, {
+      ...socketOptions,
+      recovery: { ...recovery, waitForConnect: false, setup: (model: ChannelModel) => this._setup(model) },
     });
-  }
-
-  public _rebuildAll(err: Error): Promise<void> {
-    this.log.warn({ err }, "Connection error: %s", err.message);
-    this.log.debug("Rebuilding connection NOW.");
-    this.rebuildConnection();
-    //re initialize exchanges, queues and bindings if they exist
-    for (const exchangeId in this._exchanges) {
-      const exchange = this._exchanges[exchangeId];
-      this.log.debug("Re-initialize Exchange '%s'.", exchange.name);
-      exchange._initialize();
-    }
-    for (const queueId in this._queues) {
-      const queue = this._queues[queueId];
-      const consumer = queue._consumer;
-      this.log.debug("Re-initialize queue '%s'.", queue.name);
-      queue._initialize();
-      if (consumer) {
-        this.log.debug("Re-initialize consumer for queue '%s'.", queue.name);
-        queue._initializeConsumer();
-      }
-    }
-    for (const bindingId in this._bindings) {
-      const binding = this._bindings[bindingId];
-      this.log.debug("Re-initialize binding from '%s' to '%s'.", binding._source.name, binding._destination.name);
-      binding._initialize();
-    }
-    return new Promise<void>((resolve, reject) => {
-      this.completeConfiguration().then(
-        () => {
-          this.log.debug("Rebuild success.");
-          resolve(null);
-        },
-        /* istanbul ignore next */ (rejectReason) => {
-          this.log.debug("Rebuild failed.");
-          reject(rejectReason as Error);
-        },
-      );
-    });
+    this._recovering.then(
+      (recovering) => this._listen(recovering),
+      /* istanbul ignore next */ (err: Error) => this._giveUp(err),
+    );
   }
 
   public close(): Promise<void> {
-    this._isClosing = true;
-    return new Promise<void>((resolve, reject) => {
-      this.initialized.then(() => {
-        this.connection.close((err) => {
-          /* istanbul ignore if */
-          if (err) {
-            reject(err);
-          } else {
-            this.isConnected = false;
-            this.emit("close_connection");
-            resolve(null);
-          }
-        });
-      });
+    if (this._closing === undefined) {
+      this._isClosing = true;
+      this._closing = this._close();
+    }
+    return this._closing;
+  }
+
+  /** @internal Whether the given model has closed. */
+  public _isModelClosed(model: ChannelModel): boolean {
+    return this._closedModels.has(model);
+  }
+
+  /**
+   * @internal Whether a channel of the given model may be re-created after it closed: the model is open, and it is
+   * either the current one or the one `setup` is running for.
+   */
+  public _isModelUsable(model: ChannelModel): boolean {
+    return !this._isClosing && !this._closedModels.has(model) && (model === this._model || model === this._setupModel);
+  }
+
+  private async _close(): Promise<void> {
+    const recovering = await this._recovering.catch((): undefined => undefined);
+    if (recovering) {
+      await recovering.close();
+    }
+    this._model = undefined;
+    this.isConnected = false;
+    if (!this._deferred.settled) {
+      this._deferred.reject(new Error("Connection closed"));
+    }
+    this.log.info("AMQP Connection closed.");
+    this.emit("close_connection");
+  }
+
+  private _listen(recovering: RecoveringChannelModel): void {
+    recovering.on("connect", (model: ChannelModel) => this._onConnect(model));
+    recovering.on("disconnect", (err: Error) => this._onDisconnect(err));
+    recovering.on("connect-failed", (err: Error) => {
+      this.log.warn({ err }, "Connection failed.");
     });
+    recovering.on("reconnect-scheduled", ({ attempt, delay }: { attempt: number; delay: number }) => {
+      this.log.warn("Connection retry %d in %d ms", attempt, delay);
+      this.emit("trying_connect");
+    });
+    recovering.on("reconnect-failed", (err: Error) => this._giveUp(err));
+    recovering.on("error", (err: Error) => {
+      this.log.warn({ err }, "Connection error: %s", err.message);
+    });
+    recovering.on("handler-error", (err: Error, event: string) => {
+      this.log.error({ err }, "A listener for '%s' threw: %s", event, err.message);
+    });
+    recovering.on("blocked", (reason: string) => {
+      this.log.warn("Connection blocked by the broker: %s", reason);
+    });
+    recovering.on("unblocked", () => {
+      this.log.info("Connection unblocked by the broker.");
+    });
+  }
+
+  /**
+   * Runs after every successful (re)connect, before amqplib installs the model: rebuilds the topology on fresh
+   * channels. It only throws when the model itself closed meanwhile, which makes amqplib schedule another reconnect.
+   */
+  private async _setup(model: ChannelModel): Promise<void> {
+    const generation = ++this._lastGeneration;
+    this._setupModel = model;
+    this._setupGeneration = generation;
+    // until amqplib installs the model it has no listeners on it, and an "error" without a listener would throw
+    model.on("error", (err: Error) => {
+      this.log.debug({ err }, "Connection error during setup: %s", err.message);
+    });
+    model.on("close", () => {
+      this._closedModels.add(model);
+    });
+
+    this.log.debug("Initializing the topology on a new connection.");
+    await this._initializeEntities(model, generation);
+    if (this._closedModels.has(model)) {
+      throw new Error("Connection closed while the topology was initialized");
+    }
+  }
+
+  /**
+   * Initializes every entity that is not initialized on the given generation yet: exchanges, then queues, then
+   * bindings, then queue consumers. Entity failures are handled by the entities themselves.
+   */
+  private async _initializeEntities(model: ChannelModel, generation: number): Promise<void> {
+    const settle = async (promises: Promise<void>[]): Promise<void> => {
+      await Promise.allSettled(promises);
+    };
+    await settle(Object.values(this._exchanges).map((exchange) => exchange._initialize(model, generation)));
+    await settle(Object.values(this._queues).map((queue) => queue._initialize(model, generation)));
+    await settle(Object.values(this._bindings).map((binding) => binding._initialize(model, generation)));
+    await settle(Object.values(this._queues).map((queue) => queue._initializeConsumer()));
+  }
+
+  private _onConnect(model: ChannelModel): void {
+    const generation = this._setupGeneration;
+    this._setupModel = undefined;
+    this._model = model;
+    this._generation = generation;
+    this.isConnected = true;
+
+    // entities declared while setup was running were not part of it
+    void this._initializeEntities(model, generation).then(() => {
+      if (this._model !== model) {
+        return;
+      }
+      this._deferred.resolve();
+      if (this._connectedBefore) {
+        this.log.info("AMQP Connection re-established");
+        this.emit("re_established_connection");
+      } else {
+        this._connectedBefore = true;
+        this.log.info("AQMP Connection established.");
+        this.emit("open_connection");
+      }
+    });
+  }
+
+  private _onDisconnect(err: Error): void {
+    this._model = undefined;
+    this.isConnected = false;
+    for (const exchange of Object.values(this._exchanges)) {
+      exchange._invalidate();
+    }
+    for (const queue of Object.values(this._queues)) {
+      queue._invalidate();
+    }
+    for (const binding of Object.values(this._bindings)) {
+      binding._invalidate();
+    }
+    this._invalidate();
+    if (!this._isClosing) {
+      this.log.warn({ err }, "Connection lost: %s", err.message);
+      this.emit("lost_connection");
+    }
+  }
+
+  /** Recovery gave up: no further reconnect is attempted. */
+  private _giveUp(err: Error): void {
+    this._model = undefined;
+    this.isConnected = false;
+    this._invalidate();
+    this._deferred.reject(err);
+    this.log.warn({ err }, "Connection failed, giving up: %s", err.message);
+    this.emit("error_connection", err);
+  }
+
+  /** Replaces a settled {@link initialized} with a pending one. */
+  private _invalidate(): void {
+    if (this._deferred.settled) {
+      this._deferred = new Deferred<void>();
+      this.initialized = this._deferred.promise;
+    }
   }
 
   /**
@@ -325,8 +401,9 @@ export class Connection extends EventEmitter {
     return Promise.all(promises);
   }
 
-  public get getConnection(): AmqpLib.Connection {
-    return this.connection;
+  /** The current underlying amqplib model, `undefined` while disconnected. */
+  public get getConnection(): ChannelModel | undefined {
+    return this._model;
   }
 
   /**
@@ -338,45 +415,6 @@ export class Connection extends EventEmitter {
       receivedMessagesCounter: this._receivedMessagesCounter,
       sentMessagesCounter: this._sentMessagesCounter,
     };
-  }
-
-  private rebuildConnection(): Promise<void> {
-    if (this._rebuilding) {
-      // only one rebuild process can be active at any time
-      this.log.debug("AMQP Connection rebuild already in progress, joining active rebuild attempt.");
-      return this.initialized;
-    }
-    this._retry = -1;
-    this._rebuilding = true;
-    this._isClosing = false;
-    // rebuild the connection
-    this.initialized = new Promise<void>((resolve, reject) => {
-      this.tryToConnect(this, 0, (err) => {
-        /* istanbul ignore if */
-        if (err) {
-          this._rebuilding = false;
-          reject(err as Error);
-        } else {
-          this._rebuilding = false;
-          if (this.connectedBefore) {
-            this.log.info("AMQP Connection re-established");
-            this.emit("re_established_connection");
-          } else {
-            this.log.info("AQMP Connection established.");
-            this.emit("open_connection");
-            this.connectedBefore = true;
-          }
-          resolve(null);
-        }
-      });
-    });
-    /* istanbul ignore next */
-    this.initialized.catch((err: Error) => {
-      this.log.warn({ err }, "Error creating connection!");
-      this.emit("error_connection", err);
-      //throw (err);
-    });
-    return this.initialized;
   }
 
   /**

@@ -3,7 +3,7 @@ import type { AmqpProperties } from "./AmqpProperties.js";
 import { Binding } from "./Binding.js";
 import { Connection } from "./Connection/Connection.js";
 import type { ConnectionMetrics } from "./Connection/ConnectionMetrics.js";
-import type { ReconnectStrategy } from "./Connection/ReconnectStrategy.js";
+import type { RecoveryOptions } from "./Connection/RecoveryOptions.js";
 import type { Topology } from "./Connection/Topology.js";
 import type { DeclarationOptions as ExchangeDeclarationOptions } from "./Exchange/DeclarationOptions.js";
 import { Exchange } from "./Exchange/Exchange.js";
@@ -33,7 +33,7 @@ export {
   Queue,
   QueueDeclarationOptions,
   QueueInitializeResult,
-  ReconnectStrategy,
+  RecoveryOptions,
   SimpleLogger,
   StartConsumerResult,
   Topology,

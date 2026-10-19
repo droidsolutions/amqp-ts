@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import * as AmqpLib from "amqplib/callback_api";
+import { IllegalOperationError, type Channel, type Message as AmqpMessage } from "amqplib";
 import { AmqpProperties } from "./AmqpProperties.js";
 import { Exchange } from "./Exchange/Exchange.js";
 import { SimpleLogger } from "./LoggerFactory.js";
@@ -11,9 +11,9 @@ import { Queue } from "./Queue/Queue.js";
 export class Message {
   public fields: any;
   /** for received messages only: the channel it has been received on */
-  public _channel: AmqpLib.Channel;
+  public _channel: Channel;
   /** received messages only: original amqplib message */
-  public _message: AmqpLib.Message;
+  public _message: AmqpMessage;
   /** Additional AQMP properties of the message. */
   public properties: AmqpProperties;
   /** The original contant of the message. */
@@ -61,42 +61,18 @@ export class Message {
   }
 
   /**
-   * Tries to publish the message on the destination channel. Appends the current @see properties object and the
-   * @see content of the message.
+   * Publishes the message on the destination's channel once the destination is initialized. Appends the current
+   * @see properties object and the @see content of the message.
+   *
+   * If the channel turns out to be closed (the connection or the channel was lost), the message is published again
+   * once the destination is initialized again. A message that can never be published (the destination failed,
+   * recovery gave up or the connection was closed) is logged at warn level and dropped.
    *
    * @param destination The destination of the message.
    * @param routingKey An optional routing key.
    */
   public sendTo(destination: Exchange | Queue, routingKey = ""): void {
     let exchange: string;
-    // inline function to send the message
-    const sendMessage = (): void => {
-      try {
-        if (!this.properties.timestamp) {
-          // Set timestamp if not set by user
-          this.properties.timestamp = Math.floor(new Date().getTime() / 1000);
-        }
-
-        destination._channel.publish(exchange, routingKey, this.content, this.properties);
-        destination.connection._increaseCounter("sentMessages");
-      } catch (err) {
-        const log: SimpleLogger = destination.connection.loggerFactory(this.constructor);
-        log.debug({ err }, "Publish error: %s", (err as Error).message);
-        const destinationName = destination.name;
-        const connection = destination.connection;
-        log.debug("Try to rebuild connection, before Call.");
-        connection._rebuildAll(err as Error).then(() => {
-          log.debug("Retransmitting message.");
-          if (destination instanceof Queue) {
-            // connection._queues[destinationName].publish(this.content, this.properties);
-            connection._queues[destinationName].send(this);
-          } else {
-            // connection._exchanges[destinationName].publish(this.content, routingKey, this.properties);
-            connection._exchanges[destinationName].send(this);
-          }
-        });
-      }
-    };
     if (destination instanceof Queue) {
       exchange = "";
       routingKey = destination.name;
@@ -104,7 +80,45 @@ export class Message {
       exchange = destination.name;
     }
 
-    (destination.initialized as Promise<any>).then(sendMessage);
+    void this._publish(destination, exchange, routingKey);
+  }
+
+  private async _publish(destination: Exchange | Queue, exchange: string, routingKey: string): Promise<void> {
+    const connection = destination.connection;
+    const log = (): SimpleLogger => connection.loggerFactory(this.constructor);
+    for (;;) {
+      const ready: Promise<unknown> = destination.initialized;
+      try {
+        await ready;
+      } catch (err) {
+        const reason = (err as Error).message;
+        log().warn({ err }, "Dropping message to '%s', it cannot be initialized: %s", destination.name, reason);
+        return;
+      }
+
+      try {
+        if (!this.properties.timestamp) {
+          // Set timestamp if not set by user
+          this.properties.timestamp = Math.floor(new Date().getTime() / 1000);
+        }
+
+        destination._channel.publish(exchange, routingKey, this.content, this.properties);
+        connection._increaseCounter("sentMessages");
+        return;
+      } catch (err) {
+        if (!(err instanceof IllegalOperationError)) {
+          const reason = (err as Error).message;
+          log().error({ err }, "Publishing to '%s' failed, dropping the message: %s", destination.name, reason);
+          return;
+        }
+        if (destination.initialized === ready) {
+          // the channel was closed on purpose (close() or delete()), nothing re-initializes it
+          log().warn({ err }, "Dropping message to '%s', its channel is closed.", destination.name);
+          return;
+        }
+        log().debug({ err }, "Channel of '%s' closed, publishing again once it is re-initialized.", destination.name);
+      }
+    }
   }
 
   public ack(allUpTo?: boolean): void {
