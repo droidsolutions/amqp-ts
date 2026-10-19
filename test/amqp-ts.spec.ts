@@ -1580,5 +1580,54 @@ describe("Test amqp-ts module", function () {
         currentConnection.removeAllListeners("re_established_connection");
       }
     });
+
+    it("keeps the source exchange of a binding across connections on its own connection", async function () {
+      const exchange = currentConnection.declareExchange(nextExchangeName(), "fanout");
+      await currentConnection.initialized;
+      await exchange.initialized;
+      const ownConnection = currentConnection.getConnection.connection;
+      const otherName = uniqueConnectionName();
+      const other = new Connection(
+        ConnectionUrl,
+        { clientProperties: { connection_name: otherName } },
+        { maxRetries: 5, initialDelay: 100 },
+        loggerFactory,
+      );
+      const queueName = nextQueueName();
+      try {
+        const queue = other.declareQueue(queueName);
+        await queue.bind(exchange);
+        const { consumer, waitFor } = nextMessage(queue);
+        await consumer;
+        await other.completeConfiguration();
+
+        const lost = once(other, "lost_connection");
+        const reestablished = once(other, "re_established_connection");
+        expect(await killConnections(otherName)).to.be.greaterThan(0);
+        await lost;
+        // the exchange's connection is not affected by the outage of the queue's connection
+        exchange.send(new Message("during-outage"));
+        await reestablished;
+        expect(exchange._channel.connection, "the exchange stays on its own connection").to.equal(ownConnection);
+        await within(waitFor("during-outage"), 5000, "the message sent during the outage");
+
+        exchange.send(new Message("after-recovery"));
+        await within(waitFor("after-recovery"), 5000, "the message sent after recovery");
+
+        // closing the queue's connection leaves the exchange alone
+        await other.close();
+        await within(exchange.initialized, 2000, "the exchange's initialized");
+        expect(exchange._channel.connection).to.equal(ownConnection);
+        const probe = currentConnection.declareQueue(nextQueueName());
+        await probe.bind(exchange);
+        const probed = nextMessage(probe);
+        await probed.consumer;
+        exchange.send(new Message("after-close"));
+        await within(probed.waitFor("after-close"), 5000, "the message sent after the other connection closed");
+      } finally {
+        await within(other.close(), CleanupTimeout, "close");
+        await deleteOnBroker("queue", queueName);
+      }
+    });
   });
 });

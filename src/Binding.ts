@@ -71,7 +71,7 @@ export class Binding {
   /**
    * Creates the binding on the destination's channel once source and destination are initialized on the given
    * generation, then settles {@link initialized}. Does nothing if the binding was already initialized for the given
-   * generation.
+   * generation. A source on another connection is only waited for, its own connection initializes it.
    * @internal
    * @internal
    */
@@ -86,7 +86,8 @@ export class Binding {
   /**
    * Creates every binding from or to the given entity again. Used after the entity's channel closed and the entity
    * was declared again, because a broker-side delete of an exchange or queue removes its bindings as well. Never
-   * rejects, every binding handles its own failure.
+   * rejects, every binding handles its own failure. Only the bindings kept by the entity's own connection are created
+   * again, so the given model is always that of their destination's connection.
    * @internal
    * @internal
    */
@@ -186,12 +187,25 @@ export class Binding {
     }
   }
 
+  /**
+   * Whether the source exchange belongs to another connection than the destination. The binding belongs to the
+   * destination's connection, while the source is initialized and recovered by its own connection only.
+   * @internal
+   */
+  public get _isCrossConnection(): boolean {
+    return this._source.connection !== this._destination.connection;
+  }
+
   private async _bind(model: ChannelModel, generation: number, attempt: number): Promise<void> {
     const destination = this._destination;
     const source = this._source;
     try {
-      // both are initialized on this generation already, unless they were declared after it started
-      await Promise.all([destination._initialize(model, generation), source._initialize(model, generation)]);
+      // both are initialized on this generation already, unless they were declared after it started. A source on
+      // another connection is only waited for, as in 3.x: initializing it here would move it onto this connection
+      await Promise.all([
+        destination._initialize(model, generation),
+        this._isCrossConnection ? source.initialized : source._initialize(model, generation),
+      ]);
       if (attempt !== this._attempt) {
         return;
       }

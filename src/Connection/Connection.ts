@@ -275,6 +275,9 @@ export class Connection extends EventEmitter {
   /**
    * Initializes every entity that is not initialized on the given generation yet: exchanges, then queues, then
    * bindings, then queue consumers. Entity failures are handled by the entities themselves.
+   *
+   * A binding whose source exchange belongs to another connection waits for that connection, so it is not awaited:
+   * an outage of the other connection must not hold up this one's recovery.
    */
   private async _declareEntities(model: ChannelModel, generation: number): Promise<void> {
     const settle = async (promises: Promise<void>[]): Promise<void> => {
@@ -282,7 +285,16 @@ export class Connection extends EventEmitter {
     };
     await settle(Object.values(this._exchanges).map((exchange) => exchange._initialize(model, generation)));
     await settle(Object.values(this._queues).map((queue) => queue._initialize(model, generation)));
-    await settle(Object.values(this._bindings).map((binding) => binding._initialize(model, generation)));
+    await settle(
+      Object.values(this._bindings).flatMap((binding) => {
+        const initializing = binding._initialize(model, generation);
+        if (binding._isCrossConnection) {
+          initializing.catch(() => {});
+          return [];
+        }
+        return [initializing];
+      }),
+    );
     await settle(Object.values(this._queues).map((queue) => queue._initializeConsumer()));
   }
 
