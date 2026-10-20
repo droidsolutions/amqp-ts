@@ -34,7 +34,7 @@
     "test:release-config": "node --test test/release-config.test.mjs"
   },
   "dependencies": {
-    "amqplib": "^1.0.3"
+    "amqplib": "^2.0.1"
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.2",
