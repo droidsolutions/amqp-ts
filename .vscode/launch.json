@@ -7,10 +7,6 @@
       "name": "Mocha Tests",
       "program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
       "args": [
-        "-r",
-        "ts-node/register",
-        "-r",
-        "source-map-support/register",
         "--timeout",
         "999999",
         "--colors",
@@ -18,8 +14,7 @@
       ],
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
-      "protocol": "inspector",
-      "env": { "TS_NODE_TRANSPILE_ONLY": "true" }
+      "protocol": "inspector"
     }
   ]
 }

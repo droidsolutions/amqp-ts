@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { Message } from "../src/Message";
+import { Message } from "../src/Message.js";
 
 interface TestInterface {
   propertyA: string;

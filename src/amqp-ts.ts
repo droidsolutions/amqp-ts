@@ -7,7 +7,7 @@
 
 // simplified use of amqp exchanges and queues, wrapper for amqplib
 
-import * as path from "path";
+import path from "node:path";
 
 /** Name of the current application determined by AMQP_APPLICATIONNAME env or the name of the dir we're running in. */
 export const ApplicationName =
@@ -17,6 +17,3 @@ export const ApplicationName =
       ? path.parse(process.argv[1]).name
       : path.basename(process.argv[1])
     : "amqpApp");
-
-// name for the RabbitMQ direct reply-to queue
-export const DIRECT_REPLY_TO_QUEUE = "amq.rabbitmq.reply-to";

@@ -19,6 +19,16 @@ export function stripTrailers(text) {
 
 const { writer } = await createPreset();
 
+/**
+ * The angular preset does not know the `!` that marks a breaking change in the header (`feat!: …`): such commits got
+ * no type and showed up unsorted at the top of the release notes. Accept it, and treat a `!` without a
+ * `BREAKING CHANGE:` footer as breaking as well.
+ */
+const parserOpts = {
+  headerPattern: /^(\w*)(?:\((.*)\))?!?: (.*)$/,
+  breakingHeaderPattern: /^(\w*)(?:\((.*)\))?!: (.*)$/,
+};
+
 export default {
   branches: [
     "main",
@@ -29,10 +39,11 @@ export default {
     },
   ],
   plugins: [
-    "@semantic-release/commit-analyzer",
+    ["@semantic-release/commit-analyzer", { parserOpts }],
     [
       "@semantic-release/release-notes-generator",
       {
+        parserOpts,
         writerOpts: {
           transform: (commit, context) =>
             writer.transform(

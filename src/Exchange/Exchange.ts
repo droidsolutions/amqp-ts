@@ -1,23 +1,30 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import * as AmqpLib from "amqplib/callback_api";
-import * as os from "os";
-import { ApplicationName, DIRECT_REPLY_TO_QUEUE } from "../amqp-ts";
-import { Binding } from "../Binding";
-import { Connection } from "../Connection/Connection";
-import { SimpleLogger } from "../LoggerFactory";
-import { Message } from "../Message";
-import { DeclarationOptions } from "./DeclarationOptions";
-import { ExchangeType } from "./ExchangeType";
-import { InitializeResult } from "./InitializeResult";
+import type { Channel, ChannelModel, Options } from "amqplib";
+import * as os from "node:os";
+import { ApplicationName } from "../amqp-ts.js";
+import { Binding } from "../Binding.js";
+import { Connection } from "../Connection/Connection.js";
+import { Deferred } from "../Deferred.js";
+import { SimpleLogger } from "../LoggerFactory.js";
+import { Message } from "../Message.js";
+import { DeclarationOptions } from "./DeclarationOptions.js";
+import { ExchangeType } from "./ExchangeType.js";
+import { InitializeResult } from "./InitializeResult.js";
 
 /**
  * Represents an exchange.
  */
 export class Exchange {
-  /** A promise that resolves once the exchange is initialized. */
+  /**
+   * A promise that resolves once the exchange is initialized. It is replaced by a pending promise while the exchange
+   * is re-initialized after a lost connection or a closed channel. It rejects when the exchange fails on its own, or
+   * when the connection is closed or recovery gives up while it is pending.
+   */
   public initialized: Promise<InitializeResult>;
-  /** The underlying AMQP channel. */
-  public _channel: AmqpLib.Channel;
+  /**
+   * The underlying AMQP channel.
+   * @internal
+   */
+  public _channel: Channel;
   /** Gets the name of the exchange. */
   public get name(): string {
     return this._name;
@@ -27,13 +34,23 @@ export class Exchange {
     return this._type;
   }
 
-  private _consumer_handlers: Array<[string, any]> = new Array<[string, any]>();
-  private _isConsumerInitializedRcp = false;
   private _name: string;
   private _type: ExchangeType;
   private _deleting: Promise<void>;
   private _closing: Promise<void>;
   private log: SimpleLogger;
+  private _deferred: Deferred<InitializeResult>;
+  /** The generation of the last initialization, and that initialization. */
+  private _generation: number | undefined;
+  private _initializing: Promise<void> = Promise.resolve();
+  /** Changes with every initialization, so a superseded one can tell. */
+  private _attempt = 0;
+  /** The channel the exchange was successfully declared on. */
+  private _readyChannel: Channel | undefined;
+  /** Why the exchange failed on its own, after which it is no longer declared. */
+  private _failure: Error | undefined;
+  /** Settles {@link _initializedChanged} for those waiting on it. */
+  private _changed: Deferred<void> | undefined;
 
   /**
    * Initializes a new instance of the @see Exchange class.
@@ -55,50 +72,167 @@ export class Exchange {
 
     this._name = name;
     this._type = type;
-    this._initialize();
+    this._deferred = this.connection._createDeferred<InitializeResult>();
+    this.initialized = this._deferred.promise;
+    this.connection._exchanges[this._name] = this;
+    this.connection._forgetFailure(this);
+    // while disconnected the next connect initializes it
+    if (this.connection._model) {
+      this._initialize(this.connection._model, this.connection._generation).catch(() => {});
+    }
   }
 
   /**
-   * Initializes the exchange and resolves the @see initialized promise once the initialization is complete.
+   * Creates a channel on the given model and declares the exchange on it, then settles {@link initialized}. Does
+   * nothing if the exchange was already initialized for the given generation.
+   * @internal
    */
-  public _initialize(): void {
-    this.initialized = new Promise<InitializeResult>((resolve, reject) => {
-      this.connection.initialized
-        .then(() => {
-          this.connection.connection.createChannel((createChannelError, channel) => {
-            /* istanbul ignore if */
-            if (createChannelError) {
-              reject(createChannelError as Error);
-            } else {
-              this._channel = channel;
-              const callback = (err: Error, ok: InitializeResult): void => {
-                /* istanbul ignore if */
-                if (err) {
-                  this.log.error({ err }, "Failed to create exchange '%s'.", this._name);
-                  delete this.connection._exchanges[this._name];
-                  reject(err);
-                } else {
-                  resolve(ok);
-                }
-              };
-              if (this.options.noCreate) {
-                this._channel.checkExchange(this._name, callback);
-              } else {
-                this._channel.assertExchange(
-                  this._name,
-                  this._type,
-                  this.options,
-                  callback,
-                );
-              }
-            }
-          });
-        })
-        .catch((err) => {
-          this.log.warn({ err }, "Channel failure, error caused during connection!");
-        });
+  public _initialize(model: ChannelModel, generation: number): Promise<void> {
+    if (this.connection._exchanges[this._name] !== this) {
+      // failed, closed or deleted: only a new declaration brings it back
+      return Promise.reject(this._failure ?? new Error(`Exchange '${this._name}' is no longer declared`));
+    }
+    if (this._generation !== generation) {
+      this._generation = generation;
+      this._initializing = this._declare(model, ++this._attempt);
+    }
+    return this._initializing;
+  }
+
+  /**
+   * Replaces a settled {@link initialized} with a pending one, until the exchange is initialized again.
+   * @internal
+   */
+  public _invalidate(): void {
+    this._readyChannel = undefined;
+    if (this._deferred.settled) {
+      this._deferred = this.connection._createDeferred<InitializeResult>();
+      this.initialized = this._deferred.promise;
+      this._notifyChanged();
+    }
+  }
+
+  /**
+   * Whether the exchange or its connection is closed or deleted on purpose, so nothing initializes it again.
+   * @internal
+   */
+  public get _isClosedOnPurpose(): boolean {
+    return this._closing !== undefined || this._deleting !== undefined || this.connection._isStopped;
+  }
+
+  /**
+   * Resolves once {@link initialized} is no longer the given promise, or once nothing will replace it any more
+   * because the exchange or its connection is closed or deleted. Used by a send whose channel turned out to be closing.
+   * @internal
+   */
+  public _initializedChanged(ready: Promise<unknown>): Promise<void> {
+    if (this.initialized !== ready || this._isClosedOnPurpose) {
+      return Promise.resolve();
+    }
+    this._changed ??= new Deferred<void>();
+    return this._changed.promise;
+  }
+
+  /**
+   * Wakes up whoever waits in {@link _initializedChanged}.
+   * @internal
+   */
+  public _notifyChanged(): void {
+    const changed = this._changed;
+    this._changed = undefined;
+    changed?.resolve();
+  }
+
+  /**
+   * Rejects {@link initialized} if it is still pending. Used when the connection is closed or recovery gave up.
+   * @internal
+   */
+  public _rejectPending(err: Error): void {
+    if (!this._deferred.settled) {
+      this._deferred.reject(err);
+    }
+  }
+
+  /**
+   * Re-creates the channel after it closed while the connection stayed up, declares the exchange again and restores
+   * its bindings, which a broker-side delete removes as well. Only then {@link initialized} resolves, so a message
+   * sent after that is routed again.
+   */
+  private _reinitialize(model: ChannelModel, generation: number): Promise<void> {
+    this._generation = generation;
+    this._initializing = this._declare(model, ++this._attempt, true);
+    return this._initializing;
+  }
+
+  private async _declare(model: ChannelModel, attempt: number, rebind = false): Promise<void> {
+    try {
+      const channel = await model.createChannel();
+      channel.on("error", (err: Error) => {
+        this.log.warn({ err }, "Channel of exchange '%s' failed: %s", this._name, err.message);
+      });
+      channel.on("close", () => this._onChannelClose(channel, model));
+      if (attempt !== this._attempt) {
+        await channel.close().catch(() => {});
+        return;
+      }
+      this._channel = channel;
+
+      const ok = this.options.noCreate
+        ? await channel.checkExchange(this._name)
+        : await channel.assertExchange(this._name, this._type, this.options);
+      if (attempt !== this._attempt) {
+        await channel.close().catch(() => {});
+        return;
+      }
+      this._readyChannel = channel;
+      if (rebind) {
+        await Binding._rebindContaining(this, model);
+        if (attempt !== this._attempt) {
+          return;
+        }
+      }
+      // a reply and the connection's close can arrive together: never resolve on a closed connection
+      if (this.connection._isModelClosed(model)) {
+        throw new Error("Connection closed while the exchange was initialized");
+      }
+      this._deferred.resolve(ok as InitializeResult);
+    } catch (err) {
+      if (attempt !== this._attempt) {
+        return;
+      }
+      if (this.connection._isModelClosed(model)) {
+        // the next connect initializes it again, until then initialized stays pending
+        this.log.debug({ err }, "Connection lost while initializing exchange '%s'.", this._name);
+        throw err;
+      }
+      this.log.error({ err }, "Failed to create exchange '%s'.", this._name);
+      delete this.connection._exchanges[this._name];
+      this._failure = err as Error;
+      this._deferred.reject(err as Error);
+      this.connection._onEntityFailed(this, err as Error);
+      throw err;
+    }
+  }
+
+  /**
+   * A channel that closes while the connection stays up (for example after a publish to an exchange that was deleted
+   * on the broker) is re-created and the exchange declared again. Closes during a failed declaration, on a lost
+   * connection or caused by {@link close} or {@link delete} are left alone.
+   */
+  private _onChannelClose(channel: Channel, model: ChannelModel): void {
+    if (channel !== this._readyChannel || this._closing !== undefined || this._deleting !== undefined) {
+      return;
+    }
+    const generation = this._generation;
+    this._invalidate();
+    // the connection emits its own close right after closing its channels, so look at it once that happened
+    queueMicrotask(() => {
+      if (!this.connection._isModelUsable(model) || this._generation !== generation) {
+        return;
+      }
+      this.log.warn("Channel of exchange '%s' closed, re-initializing it.", this._name);
+      this._reinitialize(model, generation).catch(() => {});
     });
-    this.connection._exchanges[this._name] = this;
   }
 
   /**
@@ -111,97 +245,19 @@ export class Exchange {
     message.sendTo(this, routingKey);
   }
 
-  public rpc(requestParameters: any, routingKey = "", callback?: (err, message: Message) => void): Promise<Message> {
-    return new Promise<Message>((resolve, reject) => {
-      function generateUuid(): string {
-        return Math.random().toString() + Math.random().toString() + Math.random().toString();
-      }
-      const processRpc = (): void => {
-        const uuid: string = generateUuid();
-        if (!this._isConsumerInitializedRcp) {
-          this._isConsumerInitializedRcp = true;
-          this._channel.consume(
-            DIRECT_REPLY_TO_QUEUE,
-            (resultMsg) => {
-              const result = new Message(resultMsg.content, resultMsg.properties);
-              result.fields = resultMsg.fields;
-              for (const handler of this._consumer_handlers) {
-                if (handler[0] === resultMsg.properties.correlationId) {
-                  const func: () => void = handler[1];
-                  func.apply("", [undefined, result]);
-                }
-              }
-              resolve(result);
-            },
-            { noAck: true },
-            (err: Error, _ok) => {
-              /* istanbul ignore if */
-              if (err) {
-                reject(new Error("amqp-ts: Queue.rpc error: " + err.message));
-              } else {
-                if (callback) {
-                  // send the rpc request
-                  this._consumer_handlers.push([uuid, callback]);
-                }
-                // consumerTag = ok.consumerTag;
-                const message = new Message(requestParameters, {
-                  correlationId: uuid,
-                  replyTo: DIRECT_REPLY_TO_QUEUE,
-                });
-                message.sendTo(this, routingKey);
-              }
-            },
-          );
-        } else {
-          this._consumer_handlers.push([uuid, callback]);
-          const message = new Message(requestParameters, {
-            correlationId: uuid,
-            replyTo: DIRECT_REPLY_TO_QUEUE,
-          });
-          message.sendTo(this, routingKey);
-          resolve(message);
-        }
-      };
-
-      this.initialized.then(processRpc);
-    });
-  }
-
   /**
    * Removes any bindings of this exchange, deletes the exchange and then closes the channel.
    */
   public delete(): Promise<void> {
     if (this._deleting === undefined) {
-      this._deleting = new Promise<void>((resolve, reject) => {
-        this.initialized
-          .then(() => {
-            return Binding.removeBindingsContaining(this);
-          })
-          .then(() => {
-            this._channel.deleteExchange(this._name, {}, (deleteExchangeError, _ok) => {
-              /* istanbul ignore if */
-              if (deleteExchangeError) {
-                reject(deleteExchangeError as Error);
-              } else {
-                this._channel.close((channelCloseError) => {
-                  delete this.initialized; // invalidate exchange
-                  delete this.connection._exchanges[this._name]; // remove the exchange from our administration
-                  /* istanbul ignore if */
-                  if (channelCloseError) {
-                    reject(channelCloseError as Error);
-                  } else {
-                    delete this._channel;
-                    delete this.connection;
-                    resolve(null);
-                  }
-                });
-              }
-            });
-          })
-          .catch((err) => {
-            reject(err as Error);
-          });
-      });
+      this._deleting = (async (): Promise<void> => {
+        this._notifyChanged();
+        await this.initialized;
+        await Binding.removeBindingsContaining(this);
+        await this._channel.deleteExchange(this._name, {});
+        delete this.connection._exchanges[this._name]; // remove the exchange from our administration
+        await this._channel.close();
+      })();
     }
     return this._deleting;
   }
@@ -211,29 +267,13 @@ export class Exchange {
    */
   public close(): Promise<void> {
     if (this._closing === undefined) {
-      this._closing = new Promise<void>((resolve, reject) => {
-        this.initialized
-          .then(() => {
-            return Binding.removeBindingsContaining(this);
-          })
-          .then(() => {
-            delete this.initialized; // invalidate exchange
-            delete this.connection._exchanges[this._name]; // remove the exchange from our administration
-            this._channel.close((err) => {
-              /* istanbul ignore if */
-              if (err) {
-                reject(err as Error);
-              } else {
-                delete this._channel;
-                delete this.connection;
-                resolve(null);
-              }
-            });
-          })
-          .catch((err) => {
-            reject(err as Error);
-          });
-      });
+      this._closing = (async (): Promise<void> => {
+        this._notifyChanged();
+        await this.initialized;
+        await Binding.removeBindingsContaining(this);
+        delete this.connection._exchanges[this._name]; // remove the exchange from our administration
+        await this._channel.close();
+      })();
     }
     return this._closing;
   }
@@ -252,14 +292,16 @@ export class Exchange {
   }
 
   /**
-   * Unbinds the given exchange from the connection.
+   * Unbinds this exchange from the given source exchange by deleting the binding. Resolves right away if there is no
+   * such binding, for example because it was unbound before.
    *
    * @param source The exchange to unbind from.
    * @param pattern The pattern.
    * @param _args Any addtional arguments.
    */
-  public unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
-    return this.connection._bindings[Binding.id(this, source, pattern)].delete();
+  public async unbind(source: Exchange, pattern = "", _args: any = {}): Promise<void> {
+    // a binding that does not exist (any more) has nothing to delete
+    await this.connection._bindings[Binding.id(this, source, pattern)]?.delete();
   }
 
   /** Returns a string containing the name of the exchange, the name of the host and the process ID. */
@@ -277,7 +319,7 @@ export class Exchange {
    * @link https://www.squaremobius.net/amqp.node/channel_api.html#channel_consume for more information.
    * @throws {Error} If a handler has already been registered for this queue.
    */
-  public activateConsumer(onMessage: (msg: Message) => any, options?: AmqpLib.Options.Consume): Promise<any> {
+  public activateConsumer(onMessage: (msg: Message) => any, options?: Options.Consume): Promise<any> {
     const queueName = this.consumerQueueName();
     if (this.connection._queues[queueName]) {
       return Promise.reject(new Error("amqp-ts Exchange.activateConsumer error: consumer already defined"));

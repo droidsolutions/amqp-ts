@@ -10,6 +10,7 @@ This is a fork of [amqp-ts](https://github.com/abreits/amqp-ts).
 
 - [Overview](#overview)
 - [Usage](#usage)
+- [Migrating from 3.x](#migrating)
 
 # Overview <a name="overview"></a>
 
@@ -20,7 +21,7 @@ Amqp-ts is a library for nodejs that simplifies communication with AMQP message 
 Changes to the [original amqp-ts](https://github.com/abreits/amqp-ts) package:
 
 - using up-to-date [amqplib](http://www.squaremobius.net/amqp.node/) (unfortunately the original package uses a four year old version that only support outdated NodeJS version)
-- dropped support for outdated NodeJS versions (Compile target in tsconfig is ES2019 which is fully supported by Node 12).
+- dropped support for outdated NodeJS versions, version 4 needs Node.js 22.13 or newer and is published as an ES module.
 - dropped winston as dependency, instead a factory can be provided to the connection constructor which returns any logger.
 - the deprecated methods like `Exchange.publish`, `Exchange.startConsumer`, `Queue.publish` and `Queue.startConsumer` are removed from this library, since their replacements like `Exchange.send` and `Exchange.activateConsumer` already existed.
 - fixes for https://github.com/abreits/amqp-ts/pull/46 and https://github.com/abreits/amqp-ts/issues/20 have been implemented
@@ -30,7 +31,7 @@ Changes to the [original amqp-ts](https://github.com/abreits/amqp-ts) package:
 
 - [High level non opinioned library], no need to worry about channels etc.
 - ['Lazy' initialization](#initialization), async AMQP dependencies are resolved automatically
-- [Automatic reconnection](#reconnect), when the connection with the AMQP server fails, the whole connection and configuration is rebuilt automatically
+- [Automatic reconnection](#reconnect), when the connection with the AMQP server fails, the whole connection and configuration is rebuilt automatically (using the connection recovery of amqplib 2)
 - Written in typescript.
 
 ## Current status
@@ -46,27 +47,35 @@ It does depend on the following npm libraries:
 No need to nest functionality, just create a connection, declare your exchanges, queues and
 bindings and send and receive messages. The library takes care of any direct dependencies.
 
-If you define an exchange and a queue and bind the queue to the exchange and want to make sure that the queue is connected to the exchange before you send a message to the exchange you can call the `connection.completeConfiguration()` method and act on the promise it returns.
+If you define an exchange and a queue and bind the queue to the exchange and want to make sure that the queue is connected to the exchange before you send a message to the exchange you can call the `connection.completeConfiguration()` method and act on the promise it returns. It is also the way to gate the start of your application on the topology, see [Waiting for the topology at startup](#startup).
 
 # Usage <a name="usage"></a>
+
+Install the package (it needs Node.js `>=22.13.0` and brings its own typings, no `@types/amqplib` required):
+
+```sh
+npm install @droidsolutions-oss/amqp-ts
+```
+
+The package is an ES module. All examples below use `import` and top-level `await`, so run them as ES modules (`.mjs` files, or `"type": "module"` in your `package.json`). Everything is exported from the package root; see [Migrating from 3.x](#migrating) if you use CommonJS.
 
 There are multiple ways to declare your exchanges, queues and bindings. Each of those has an `initialized` property which is a promise that resolves when initialization is complete. You can either await it yourself or call `completeConfiguration` on the connection like explained in [Lazy initialization](#initialization).
 
 ## Async Typescript Example
 
 ```ts
-import { Connection, Message } from "amqp-ts";
+import { Connection, Message } from "@droidsolutions-oss/amqp-ts";
 
-var connection = new Connection("amqp://localhost");
+const connection = new Connection("amqp://localhost");
 
 // publish
-var exchange = await connection.declareExchangeAsync("ExchangeName");
+const exchange = await connection.declareExchangeAsync("ExchangeName");
 
-var msg = new Message("Test");
+const msg = new Message("Test");
 exchange.send(msg);
 
 // subscribe/consume
-var queue = await connection.declareQueueAsync("QueueName");
+const queue = await connection.declareQueueAsync("QueueName");
 await queue.bind(exchange);
 await queue.activateConsumer((message: Message) => {
   console.log("Message received: " + message.getContent());
@@ -76,11 +85,11 @@ await queue.activateConsumer((message: Message) => {
 ## Lazy Typescript Example
 
 ```ts
-import { Connection, Message } from "amqp-ts";
+import { Connection, Message } from "@droidsolutions-oss/amqp-ts";
 
-var connection = new Connection("amqp://localhost");
-var exchange = connection.declareExchange("ExchangeName");
-var queue = connection.declareQueue("QueueName");
+const connection = new Connection("amqp://localhost");
+const exchange = connection.declareExchange("ExchangeName");
+const queue = connection.declareQueue("QueueName");
 void queue.bind(exchange);
 void queue.activateConsumer((message: Message) => {
   console.log("Message received: " + message.getContent());
@@ -88,18 +97,18 @@ void queue.activateConsumer((message: Message) => {
 
 // it is possible that the following message is not received because
 // it can be sent before the queue, binding or consumer exist
-var msg = new Message("Test");
+const msg = new Message("Test");
 exchange.send(msg);
 
 // This waits until all exchanges/queues/bindings are initialized
 await connection.completeConfiguration();
 // the following message will be received because
 // everything you defined earlier for this connection now exists
-var msg2 = new Message("Test2");
+const msg2 = new Message("Test2");
 exchange.send(msg2);
 ```
 
-More examples can be found in the [tutorials directory](https://github.com/abreits/amqp-ts/tree/master/tutorials).
+More examples can be found in the [tutorials directory](https://github.com/droidsolutions/amqp-ts/tree/master/tutorials).
 
 ## Messages
 
@@ -116,7 +125,7 @@ Properties that are set by this library are:
 
 The last argument of the `Connection` constructor takes a logger factory function. If you specify it, the function should return a logger that matches the `SimpleLogger` interface. This type is heavily inspired by the style of [Pino](https://github.com/pinojs/pino), but you can write a wrapper for any logger you like. It should support `%s`, `%d` and `%o` string interpolation, as they are used for internal log messages.
 
-If you do not specify a logger factory, no logs are emitted.
+If you do not specify a logger factory, no logs are emitted. This includes errors thrown by your own event listeners, which are caught and logged at error level (see [Events](#events)), and messages that have to be dropped (see [Sending messages](#sending)). So pass a logger factory in production, otherwise these problems are invisible.
 
 Example usage with Pino:
 
@@ -143,7 +152,7 @@ loggerFactory = (context, meta) => {
   return logger.child(context, meta);
 };
 
-const connection = new Connection("amqp://localhost", {}, { retries: 0, interval: 1500 }, loggerFactory);
+const connection = new Connection("amqp://localhost", {}, {}, loggerFactory);
 ```
 
 The above example would result in log messages like these:
@@ -218,63 +227,131 @@ const loggerFactory = (context, meta) => {
 
 To know the status of the connection: `connection.isConnected`. Returns true if the connection exists and false, otherwise.
 
-## Events
+`connection.getConnection` returns the current [amqplib](https://amqp-node.github.io/amqplib/) `ChannelModel`, or `undefined` while the connection is down (before the first connect, during a reconnect and after `close()`). It is replaced on every reconnect, so do not keep a reference to it. Messaging should go through the exchanges and queues of this library, which survive reconnects.
 
-    #on('open_connection', function() {...})
+`connection.initialized` is a promise that resolves once the connection is established and the declared topology was set up. While the connection is down it is replaced by a pending promise that resolves after the next successful reconnect. It rejects when `close()` is called or recovery gives up before that. The same is true for the `initialized` promises of exchanges, queues, bindings and the consumer of a queue (`activateConsumer`): they reject on `close()` and when recovery gives up, and reading `initialized` of an entity after `close()` returns a rejected promise.
 
-It's emitted when a connection is concretized and can publish/subscribe in Rabbit Bus.
+`connection.initialized` only reflects the connection. An exchange, queue, binding or consumer that fails on its own (for example a `noCreate` queue that does not exist, or a consumer the broker refuses) rejects its own promise and is reported through [`error_connection`](#events), but it does not keep `connection.initialized` from resolving, so one broken entity cannot take the whole connection down.
 
-    #on('close_connection', function() {...})
+### Waiting for the topology at startup <a name="startup"></a>
 
-It's emitted when a connection is closed, after calling the close method.
+To start only once everything you declared works, await `connection.completeConfiguration()`. It waits until every declared exchange, queue and binding is initialized and every activated consumer is registered, and it rejects when one of them failed, at the first connect or later. It rejects as long as the failed entity is not declared again (a refused consumer: until the next reconnect registers it), so asking again does not hide a failure.
 
-    #on('lost_connection', function() {...})
+```ts
+import { Connection, Message } from "@droidsolutions-oss/amqp-ts";
 
-It is emitted when the connection is lost and before attempting to re-establish the connection.
+const connection = new Connection("amqp://localhost");
+const queue = connection.declareQueue("orders", { durable: true });
+void queue.bind(connection.declareExchange("events", "topic"), "order.*");
+void queue.activateConsumer((message: Message) => console.log("order", message.getContent()));
 
-    #on('trying_connect', function() {...})
+try {
+  await connection.completeConfiguration();
+} catch (err) {
+  console.error("the topology could not be set up", err);
+  await connection.close();
+  process.exit(1);
+}
+```
 
-It is emitted during the time that try re-establish the connection.
+## Sending messages <a name="sending"></a>
 
-    #on('re_established_connection', function() {...})
+`exchange.send(message, routingKey)` and `queue.send(message)` return `void`. A message sent before the connection or the exchange/queue is ready is buffered and sent as soon as it is. The same goes for a message sent while the connection or the channel is lost or closing, for example while amqplib closes the connection after a protocol error: it is sent once the exchange/queue is initialized again. A message that can no longer be sent, because recovery gave up, `close()` was called or the exchange/queue was closed or deleted, is logged at warn level and dropped. (In 3.x, sending to a closed entity threw a `TypeError`.) If you need to know that a message left, await `connection.completeConfiguration()` or the `initialized` promise of the target before sending.
 
-It is emitted when the connection is re-established.
+## Events <a name="events"></a>
 
-    #on('error_connection', function(err) {...})
+The `Connection` is an `EventEmitter`. It emits these events:
 
-It's emitted when a error is registered during the connection.
+| Event                       | Emitted when                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open_connection`           | The first connection is established and the declared topology (exchanges, queues, bindings, consumers) was set up. An entity that failed on its own does not prevent it.        |
+| `re_established_connection` | A later connection, after `lost_connection`, is established and the topology is restored.                                                                                       |
+| `lost_connection`           | The connection was lost unexpectedly (not after `close()`), before reconnecting is attempted.                                                                                   |
+| `trying_connect`            | A (re)connect attempt was scheduled, once per attempt.                                                                                                                          |
+| `close_connection`          | The connection was closed after you called `close()`.                                                                                                                           |
+| `error_connection(err)`     | Recovery gave up (see `maxRetries`), or a single exchange, queue, binding or consumer failed on its own, at its first declaration or again during recovery. `err` is the cause. |
+
+```ts
+connection.on("open_connection", () => console.log("connected"));
+connection.on("lost_connection", () => console.log("connection lost, reconnecting"));
+connection.on("re_established_connection", () => console.log("connected again"));
+connection.on("error_connection", (err) => console.error("connection problem", err));
+```
+
+Notes:
+
+- `error_connection` is not by itself a "the connection is dead" signal. It also fires when only one entity failed, although the connection itself is fine: for example a `noCreate` exchange or queue that does not exist, a queue whose declaration conflicts with an existing one, a binding the broker refuses, a consumer the broker refuses, or one it cancels again right after it was registered again. That includes the first declaration, also of entities nobody awaits, and the declarations repeated during recovery. After recovery gave up (finite `maxRetries`) it fires with the give-up error and no more reconnects happen.
+- To find out at startup whether the topology works, await [`completeConfiguration()`](#startup) instead of listening for this event.
+- Exceptions thrown by your listeners are caught and logged at error level instead of propagating, and the listeners after the failing one still run. With the default (empty) logger such errors are invisible, so pass a [logger factory](#logging).
 
 ## Automatic Reconnection <a name="reconnect"></a>
 
-When the library detects that the connection with the AMQP server is lost, it tries to automatically reconnect to the server.
+When the library detects that the connection with the AMQP server is lost, it reconnects automatically and rebuilds the whole topology (exchanges, queues, bindings and consumers). This uses the connection recovery of amqplib 2. The third argument of the `Connection` constructor takes the `RecoveryOptions`:
+
+| Option              | Default    | Meaning                                                                                                   |
+| ------------------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `initialDelay`      | `100`      | Delay before the first retry, in milliseconds.                                                            |
+| `maxDelay`          | `30000`    | Upper bound of the delay, in milliseconds.                                                                |
+| `factor`            | `2`        | The delay is multiplied by this factor after every attempt (exponential backoff).                         |
+| `jitter`            | `0.2`      | Fraction (0 to 1) by which each delay randomly varies up or down, so not all clients reconnect at once. The delay never exceeds `maxDelay`. |
+| `maxRetries`        | `Infinity` | Number of reconnect attempts before giving up. Also bounds the first connect unless `initialMaxRetries` is set. |
+| `initialMaxRetries` | `maxRetries` | Number of attempts before the first successful connect only. Afterwards `maxRetries` applies.           |
+| `calculateDelay`    | -          | `(attempt: number) => number`, your own delay in milliseconds (attempts start at 1) instead of the backoff. |
+
+By default it retries forever. Example that fails fast when the broker is unreachable at startup, but keeps retrying once it was connected:
+
+```ts
+import { Connection, type RecoveryOptions } from "@droidsolutions-oss/amqp-ts";
+
+const recovery: RecoveryOptions = { initialMaxRetries: 3, initialDelay: 500, maxDelay: 10000 };
+const connection = new Connection("amqp://localhost", {}, recovery);
+connection.on("error_connection", (err) => {
+  // fired at startup after 3 failed attempts, or when a single exchange, queue, binding or consumer fails
+  console.error("connection problem", err);
+});
+
+await connection.initialized; // rejects if the broker is still unreachable after 3 retries
+```
+
+`RecoveryOptions` is amqplib's type without `setup` and `waitForConnect`, which amqp-ts uses itself.
+
+### What happens on connection loss
+
+- On `lost_connection` the connection and all exchanges, queues, bindings and consumers become "not initialized" and their `initialized` promises are replaced by pending ones. Messages you send meanwhile are buffered.
+- After each reconnect the topology is declared again in dependency order (exchanges, queues, bindings, consumers) before `re_established_connection` (or `open_connection` for the first connect) is emitted and the pending promises resolve. A binding to an exchange of another `Connection` is the exception: it waits for that connection to have the exchange initialized, so it may be created later.
+- If recovery gives up (finite `maxRetries`), `error_connection` fires with the give-up error, every pending `initialized` rejects, and buffered messages are dropped with a warn log.
+- Without a reconnect: when the broker closes the channel of a single exchange or queue (for example error 406 on a double ack, or 404 when publishing to a deleted exchange), only that entity gets a new channel, including its bindings and consumer. A consumer cancelled by the broker (for example because its queue was deleted) is registered again. If the broker cancels it again within a second of that, it stays cancelled until the next reconnect and `error_connection` is emitted.
+- A consumer the broker refuses (for example 403 because another connection holds an exclusive consumer on the queue) is not retried on the same connection. It is registered again on the next reconnect, or when you call `stopConsumer()` and then `activateConsumer()` again; until then its promise and `completeConfiguration()` reject.
 
 ## Automatic JSON content
 
 If your message content is not a string and not a buffer it is converted automatically to a JSON string. The `contentType` is set to `application/json` and the `contentEncoding` is set to `utf-8`. Vice versa if you call `getContent()` on the message and the `contentType` is set to `application/json` the string will be parsed and the parsed result will be returned. If you want to avoid the `any` type you can use `getJsonContent<T>()` instead. This method throws an error, if the `contentType` is not set to `application/json`.
 
-## Automatic ReplyTo
+## Automatic ReplyTo and RPC <a name="rpc"></a>
 
-If your message consumer returns a value and the `replyTo` property is set in the message property, the value is send to the queue given in the `replyTo` field. The correlationId is set to the response message if it is set in the request. If you want to set other properties you can specify them when calling `activateConsumer` i nthe options. If you don't return any value (a.k.a return `undefined`) no automatic reply is send. You have manage this by yourself then.
+If your message consumer returns a value and the `replyTo` property is set in the message property, the value is sent to the queue given in the `replyTo` field. The correlationId is set to the response message if it is set in the request. If you want to set other properties you can specify them when calling `activateConsumer` in the options. If you don't return any value (a.k.a return `undefined`) no automatic reply is sent. You have to manage this yourself then.
+
+This is how you implement request/response (RPC) with this library: the requester sends a message with `replyTo` (and a `correlationId` to match the answer) and consumes its reply queue, the consumer simply returns the result.
 
 Examples:
 
 Provider/Publisher side:
 
 ```ts
-import { Connection, Message } from "amqp-ts";
+import { Connection, Message } from "@droidsolutions-oss/amqp-ts";
 
-var connection = new Connection("amqp://localhost");
-var exchange = await connection.declareExchangeAsync("ExchangeName");
-var queue = await connection.declareQueueAsync("rpc_reply");
+const connection = new Connection("amqp://localhost");
+const exchange = await connection.declareExchangeAsync("ExchangeName");
+const queue = await connection.declareQueueAsync("rpc_reply");
 await queue.activateConsumer((message: Message) => {
   console.log("RPC reply Message received: " + message.properties.correlationId); // should log the ID you set in the message below
 
-  const content = message.getJsonContent<MyResultDto>();
+  const content = message.getJsonContent<{ my: string }>();
   console.log("Result is ", content.my); // "Result is result"
 });
 
 // sending the message
-var msg = new Message(
+const msg = new Message(
   { some: "value" },
   {
     correlationId: "jC7oTFEeWIfmn_c8Z5Aa",
@@ -285,19 +362,21 @@ var msg = new Message(
 exchange.send(msg, "rpc_queue");
 ```
 
+The consumer of the reply queue is a normal consumer and is registered again after a reconnect. Replies that arrive while it is down stay in the queue.
+
 Consumer/Subscriber side:
 
 ```ts
-import { Connection, Message } from "amqp-ts";
+import { Connection, Message } from "@droidsolutions-oss/amqp-ts";
 
-var connection = new Connection("amqp://localhost");
-var exchange = await connection.declareExchangeAsync("ExchangeName");
-var queue = await connection.declareQueueAsync("rpc_queue");
+const connection = new Connection("amqp://localhost");
+const exchange = await connection.declareExchangeAsync("ExchangeName");
+const queue = await connection.declareQueueAsync("rpc_queue");
 await queue.bind(exchange);
 await queue.activateConsumer((message: Message) => {
   console.log(`Message from ${message.properties.appId} received: ${message.properties.correlationId}`); // "Message from app:my-app component:rpc-client received: jC7oTFEeWIfmn_c8Z5Aa
 
-  const content = message.getJsonContent<MyDto>();
+  const content = message.getJsonContent<{ some: string }>();
   console.log("Content is ", content.some); // "Content is value"
   // process message content
 
@@ -310,3 +389,65 @@ await queue.activateConsumer((message: Message) => {
 The connection instance offers a method that returns basic metrics of the connection. For the metrics there is a TypeScript interface `ConnectionMetrics` that contains possible metrics of the connection.
 
 To receive them you can call `getMetrics()` on the connection instance.
+
+## Migrating from 3.x <a name="migrating"></a>
+
+Version 4.0 is a major release. This section lists everything you have to change, and the behaviour changes you may notice.
+
+### Breaking changes
+
+- **ESM only.** The package is an ES module. In ESM code import from the package root as before (`import { Connection } from "@droidsolutions-oss/amqp-ts"`). In CommonJS code you can still load it with `require()` on Node `>=22.13.0` (which can `require()` ES modules without a flag):
+
+  ```js
+  const { Connection, Message } = require("@droidsolutions-oss/amqp-ts");
+  ```
+
+  In TypeScript, set `"module": "node20"` or `"nodenext"` (with a matching `moduleResolution`) so that `require` of an ES module is understood. `module: "commonjs"` will not resolve the new package.
+- **Node.js `>=22.13.0`.** Older versions are not supported (the `engines` field says so).
+- **No deep imports.** Only the package root is exported. `import { Message } from "@droidsolutions-oss/amqp-ts/lib/Message"` (and every other `lib/...` path) fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. All public classes and types are exported from the root: `Connection`, `Exchange`, `Queue`, `Binding`, `Message`, `ApplicationName` and the types `AmqpProperties`, `ConnectionMetrics`, `RecoveryOptions`, `Topology`, `LoggerFactory`, `SimpleLogger`, `ExchangeType`, `ExchangeDeclarationOptions`, `QueueDeclarationOptions`, `ExchangeInitializeResult`, `QueueInitializeResult`, `DeleteResult`, `StartConsumerResult`.
+- **`RecoveryOptions` replace `ReconnectStrategy`.** The third `Connection` argument is now amqplib's [`RecoveryOptions`](#reconnect). The fixed interval is replaced by exponential backoff with jitter.
+
+  ```ts
+  // 3.x
+  new Connection(url, {}, { retries: 0, interval: 1500 }); // retry forever, every 1.5 s
+  new Connection(url, {}, { retries: 5, interval: 1500 }); // give up after 5 attempts
+
+  // 4.x
+  new Connection(url); // the default retries forever (maxRetries: Infinity) with backoff
+  new Connection(url, {}, { maxRetries: 5 }); // give up after 5 attempts
+  new Connection(url, {}, { initialDelay: 1500, maxDelay: 1500, factor: 1, jitter: 0 }); // fixed delay, if you really want it
+  ```
+
+  `{ retries: 0 }` (forever) becomes the default, `{ retries: n }` becomes `{ maxRetries: n }`, and the `interval` becomes `initialDelay`/`maxDelay`/`factor`/`jitter`. New is `initialMaxRetries`, which lets startup fail fast while later recovery retries forever. The `ReconnectStrategy` type is gone.
+- **`heartbeat=0` disables heartbeats.** amqplib reads the heartbeat from the query of the connection URL (`amqp://localhost?heartbeat=0`), not from the socket options. amqplib 2 treats `heartbeat=0` as "no heartbeats" instead of "use the server's value". If your URL contains `heartbeat=0` to get the server's value, remove the parameter instead.
+- **`Exchange.rpc` and `Queue.rpc` are removed.** `rpc` only resolved the first call with its reply and lost its reply consumer after a reconnect. Send a message with `replyTo` and `correlationId` and consume the reply queue instead; the consumer's return value is sent back automatically. See [Automatic ReplyTo and RPC](#rpc):
+
+  ```ts
+  // 3.x
+  const result = await queue.rpc(21);
+  console.log(result.getContent());
+
+  // 4.x
+  const replies = await connection.declareQueueAsync("my_replies", { exclusive: true });
+  await replies.activateConsumer((reply) => console.log(reply.getContent()), { noAck: true });
+  queue.send(new Message(21, { replyTo: "my_replies", correlationId: "some-unique-id" }));
+  ```
+
+  Match replies to requests by `correlationId` if you have more than one call in flight.
+- **`getConnection` and `connection`.** `connection.getConnection` now returns the current amqplib `ChannelModel` (or `undefined` while disconnected) instead of the amqplib `Connection`, and the public `connection` field is gone. Use `getConnection` and check for `undefined`.
+- **`tryToConnect` is removed.** The connection is established and re-established automatically, there is nothing to call. Use the [events](#events) and `connection.initialized` to react to its state.
+- **Typings.** `@types/amqplib` is no longer needed (amqplib ships its own types), remove it from your dependencies. Underscore-prefixed members (`_channel`, `_exchanges`, `_queues`, ...) are internal and no longer in the typings.
+
+### Behaviour changes
+
+- **`error_connection` is broader.** Besides "recovery gave up" (finite `maxRetries`, with the give-up error) it also fires whenever a single exchange, queue or binding cannot be declared, or a consumer cannot be registered, whether at its first declaration or again during recovery. The connection itself is fine then, so do not treat the event as "connection dead".
+- **Gate startup with `completeConfiguration()`.** `connection.initialized` and `open_connection` only reflect the connection: an entity that fails on its own does not reject or delay them. `connection.completeConfiguration()` rejects while a declared exchange, queue or binding failed or an activated consumer was refused, also when you ask after the failure. See [Waiting for the topology at startup](#startup).
+- **`deleteConfiguration()` resolves with `undefined`.** It deletes the bindings, then the queues, then the exchanges, one phase after the other, and rejects with the first failure. In 3.x it ran everything at once and resolved with the array of results (`Promise.all`).
+- **`unbind` of an unknown binding resolves.** `queue.unbind()` and `exchange.unbind()` resolve when there is no such binding (for example when unbinding twice). In 3.x they threw a `TypeError`. Deleting a binding that is still being created again rejects its pending `initialized`.
+- **Pending `initialized` promises reject.** Every pending `initialized` (connection, exchanges, queues, bindings and consumers) rejects when you call `close()` and when recovery gives up. Reading the `initialized` of an entity after `close()` returns a rejected promise. Add error handling where you await them without one.
+- **Unsendable messages are dropped.** `send()` still returns `void`. Messages that can no longer be sent (recovery gave up, `close()` was called, the exchange or queue was closed or deleted) are logged at warn level and dropped. In 3.x a send to a closed entity threw a `TypeError`.
+- **Listener exceptions are logged.** Exceptions thrown by your event listeners are caught and logged at error level instead of propagating. With the default (empty) logger they are invisible, so pass a `loggerFactory`.
+- **Bindings wait for their source exchange.** A binding is created once its source exchange is initialized through this library, and fails if that exchange cannot be declared. In 3.x a queue binding was created as soon as the queue was ready, whenever the exchange happened to exist on the broker. Declare the source exchange on the same connection (`connection.declareExchange(...)`) before binding to it.
+- **`activateConsumer` rejects if the queue declaration fails.** The returned promise rejects with the declaration error.
+- **Reconnect timing.** The default is exponential backoff with jitter (100 ms initial delay, 30 s maximum, factor 2, jitter 0.2) retrying forever, instead of a fixed 1.5 s interval.
+- **Broker-side channel and consumer failures are repaired.** A channel the broker closes (for example on a double ack) is re-created for that exchange or queue only, and a consumer cancelled by the broker is registered again, see [What happens on connection loss](#reconnect).

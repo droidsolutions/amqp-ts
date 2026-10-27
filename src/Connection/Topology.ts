@@ -1,4 +1,4 @@
-import { ExchangeType } from "../Exchange/ExchangeType";
+import { ExchangeType } from "../Exchange/ExchangeType.js";
 
 export interface Topology {
   exchanges: {

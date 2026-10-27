@@ -1,12 +1,15 @@
 {
   "compilerOptions": {
-    "target": "ES2019",
-    "module": "commonjs",
+    "target": "ES2024",
+    "strict": false,
+    "module": "node20",
     "preserveConstEnums": true,
+    "stripInternal": true,
     "outDir": "./lib",
     "declaration": true,
     "rootDir": "./src",
-    "sourceMap": true
+    "sourceMap": true,
+    "types": ["node"]
   },
   "exclude": ["lib", "test"]
 }
