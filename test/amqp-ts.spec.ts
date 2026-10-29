@@ -569,8 +569,11 @@ describe("Test amqp-ts module", function () {
 
       await currentConnection.completeConfiguration();
 
-      // break the connection, it should auto reconnect and send the message
+      // break the connection, it should auto reconnect and send the message; the management API answers before the
+      // client has seen the close, and a publish in between is lost, so send only once the loss was noticed
+      const lost = once(currentConnection, "lost_connection");
       expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      await lost;
       exchange1.send(new Message("Test"));
 
       await expect(testPromise).to.eventually.equals("Test");
@@ -592,8 +595,11 @@ describe("Test amqp-ts module", function () {
 
       await currentConnection.completeConfiguration();
 
-      // break the connection, it should auto reconnect and send the message
+      // break the connection, it should auto reconnect and send the message; the management API answers before the
+      // client has seen the close, and a publish in between is lost, so send only once the loss was noticed
+      const lost = once(currentConnection, "lost_connection");
       expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
+      await lost;
       queue.send(new Message("Test"));
 
       await expect(testPromise).to.eventually.equals("Test");
