@@ -1113,12 +1113,14 @@ describe("Test amqp-ts module", function () {
       await consumer;
       await currentConnection.completeConfiguration();
 
+      // this test times out on CI now and then; bound each step below the test timeout, so a failure names the step
+      // that hangs (killConnections gives up on its own)
       const reestablished = once(currentConnection, "re_established_connection");
       expect(await killConnections(currentConnectionName)).to.be.greaterThan(0);
-      await reestablished;
+      await within(reestablished, 8000, "re_established_connection after the kill");
 
       exchange1.send(new Message("through-topology"));
-      await waitFor("through-topology");
+      await within(waitFor("through-topology"), 5000, "the message routed through the rebuilt topology");
     });
 
     it("emits lost_connection before re_established_connection", async function () {
