@@ -14,6 +14,9 @@ import { RecoveryOptions } from "./RecoveryOptions.js";
 import { Topology } from "./Topology.js";
 
 export class Connection extends EventEmitter {
+  /** How many setups in a row are abandoned for another connect because an exclusive queue was still locked. */
+  private static readonly LockedSetupRetries = 5;
+
   /**
    * Resolves once the connection is established and the declared topology was set up. It is replaced by a pending
    * promise when the connection is lost and resolves again after the next successful reconnect. It rejects when
@@ -56,6 +59,10 @@ export class Connection extends EventEmitter {
   private _setupModel: ChannelModel | undefined;
   private _setupGeneration = 0;
   private _closedModels = new WeakSet<ChannelModel>();
+  /** Why the running setup is abandoned for another connect, see {@link _retrySetup}. */
+  private _setupRetryReason: Error | undefined;
+  /** How many setups in a row were abandoned so far. */
+  private _lockedSetups = 0;
   private _connectedBefore = false;
   private _isClosing = false;
   private _closing: Promise<void> | undefined;
@@ -290,6 +297,7 @@ export class Connection extends EventEmitter {
     const generation = ++this._lastGeneration;
     this._setupModel = model;
     this._setupGeneration = generation;
+    this._setupRetryReason = undefined;
     // until amqplib installs the model it has no listeners on it, and an "error" without a listener would throw
     model.on("error", (err: Error) => {
       this.log.debug({ err }, "Connection error during setup: %s", err.message);
@@ -300,9 +308,40 @@ export class Connection extends EventEmitter {
 
     this.log.debug("Initializing the topology on a new connection.");
     await this._declareEntities(model, generation);
+    if (this._setupRetryReason !== undefined) {
+      this._lockedSetups++;
+      throw this._setupRetryReason;
+    }
     if (this._closedModels.has(model)) {
       throw new Error("Connection closed while the topology was initialized");
     }
+    this._lockedSetups = 0;
+  }
+
+  /**
+   * An exclusive queue was still locked while it was declared again on the given model. After a reconnect that is
+   * usually the queue of the previous connection, which the broker removes asynchronously, and it may still remove
+   * autoDelete exchanges along with it that the reconnect already declared again. So the setup is abandoned and the
+   * whole topology declared again on another connect, a limited number of times in a row. The entities treat the
+   * model as closed from now on, so they stay pending for that connect instead of failing.
+   *
+   * On the first connect, outside `setup` and once the limit is reached, nothing happens and the queue fails.
+   * @internal
+   */
+  public _retrySetup(model: ChannelModel, err: Error): void {
+    if (
+      model !== this._setupModel ||
+      !this._connectedBefore ||
+      this._isClosing ||
+      this._lockedSetups >= Connection.LockedSetupRetries
+    ) {
+      return;
+    }
+    if (this._setupRetryReason === undefined) {
+      this.log.warn({ err }, "An exclusive queue is still locked, connecting again: %s", err.message);
+      this._setupRetryReason = new Error(`An exclusive queue was still locked: ${err.message}`, { cause: err });
+    }
+    this._closedModels.add(model);
   }
 
   /**

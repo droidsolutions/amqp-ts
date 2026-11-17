@@ -168,6 +168,28 @@ describe("Test amqp-ts module", function () {
     }
   }
 
+  /**
+   * Declares an exclusive queue on the given raw connection, retrying until the broker released it from its previous
+   * owner. Every other connection then gets RESOURCE_LOCKED for it until `holder` closes.
+   */
+  async function claimExclusiveQueue(holder: AmqpLib.ChannelModel, queueName: string, timeoutMs = 5000) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      // a refused declaration closes its channel
+      const channel = await holder.createChannel();
+      channel.on("error", () => {});
+      try {
+        await channel.assertQueue(queueName, { exclusive: true });
+        return;
+      } catch (err) {
+        if (Date.now() > deadline) {
+          throw err;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+
   /** Creates an exchange or a queue behind the library's back, so it can be declared with `noCreate`. */
   async function createOnBroker(kind: "exchange" | "queue", name: string) {
     const raw = await AmqpLib.connect(ConnectionUrl);
@@ -1121,6 +1143,86 @@ describe("Test amqp-ts module", function () {
 
       exchange1.send(new Message("through-topology"));
       await within(waitFor("through-topology"), 5000, "the message routed through the rebuilt topology");
+    });
+
+    it("declares an exclusive queue again that is still locked when the connection comes back", async function () {
+      // the broker removes the exclusive queue of a killed connection asynchronously, so a fast reconnect can find it
+      // still locked; meanwhile it may remove autoDelete exchanges the reconnect already declared again. A second
+      // connection holding the queue keeps it locked for as long as the test needs
+      const name = uniqueConnectionName();
+      const connection = new Connection(
+        ConnectionUrl,
+        { clientProperties: { connection_name: name } },
+        // leave the holder time to take the queue over before the first reconnect
+        { maxRetries: 10, calculateDelay: (attempt) => (attempt === 1 ? 500 : 100) },
+        loggerFactory,
+      );
+      const holder = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const queueName = nextQueueName();
+        const exchange1 = connection.declareExchange(nextExchangeName(), "fanout", { autoDelete: true });
+        const exchange2 = connection.declareExchange(nextExchangeName(), "fanout", { autoDelete: true });
+        const queue = connection.declareQueue(queueName, { exclusive: true });
+        await exchange2.bind(exchange1);
+        await queue.bind(exchange2);
+        const { consumer, waitFor } = nextMessage(queue);
+        await consumer;
+        await connection.completeConfiguration();
+
+        const errors: Error[] = [];
+        connection.on("error_connection", (err: Error) => errors.push(err));
+        const lost = once(connection, "lost_connection");
+        expect(await killConnections(name)).to.be.greaterThan(0);
+        await lost;
+        await claimExclusiveQueue(holder, queueName);
+        // release the queue once the reconnect found it locked and retries, or went on without it
+        const reestablished = once(connection, "re_established_connection");
+        await within(Promise.race([once(connection, "trying_connect"), reestablished]), 5000, "the first reconnect");
+        await holder.close();
+
+        await within(reestablished, 5000, "re_established_connection");
+        expect(errors, "the locked queue is not given up").to.eql([]);
+        exchange1.send(new Message("through-topology"));
+        await within(waitFor("through-topology"), 5000, "the message routed through the rebuilt topology");
+      } finally {
+        await holder.close().catch(() => {});
+        await within(connection.close(), CleanupTimeout, "close");
+      }
+    });
+
+    it("gives up an exclusive queue that stays locked after a reconnect, but not the connection", async function () {
+      const name = uniqueConnectionName();
+      const connection = new Connection(
+        ConnectionUrl,
+        { clientProperties: { connection_name: name } },
+        { maxRetries: 20, calculateDelay: (attempt) => (attempt === 1 ? 500 : 10) },
+        loggerFactory,
+      );
+      const holder = await AmqpLib.connect(ConnectionUrl);
+      try {
+        const queueName = nextQueueName();
+        const queue = connection.declareQueue(queueName, { exclusive: true });
+        await queue.activateConsumer(() => {}, { noAck: true });
+        await connection.completeConfiguration();
+
+        const errors: Error[] = [];
+        connection.on("error_connection", (err: Error) => errors.push(err));
+        let reconnects = 0;
+        connection.on("trying_connect", () => reconnects++);
+        const lost = once(connection, "lost_connection");
+        expect(await killConnections(name)).to.be.greaterThan(0);
+        await lost;
+        await claimExclusiveQueue(holder, queueName);
+
+        await within(once(connection, "re_established_connection"), 5000, "re_established_connection");
+        expect(reconnects, "reconnected again while the queue was locked").to.be.greaterThan(1);
+        expect(errors, "one error_connection for the locked queue").to.have.length(1);
+        expect((errors[0] as Error & { code?: number }).code).to.equal(405);
+        await expect(queue.initialized).to.be.rejectedWith("RESOURCE_LOCKED");
+      } finally {
+        await holder.close().catch(() => {});
+        await within(connection.close(), CleanupTimeout, "close");
+      }
     });
 
     it("emits lost_connection before re_established_connection", async function () {

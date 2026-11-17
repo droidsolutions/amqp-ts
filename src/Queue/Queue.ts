@@ -276,6 +276,10 @@ export class Queue {
       if (attempt !== this._attempt) {
         return;
       }
+      if (this.options.exclusive && (err as { code?: unknown }).code === 405) {
+        // RESOURCE_LOCKED, possibly by the previous connection
+        this.connection._retrySetup(model, err as Error);
+      }
       if (this.connection._isModelClosed(model)) {
         // the next connect initializes it again, until then initialized stays pending
         this.log.debug({ err }, "Connection lost while initializing queue '%s'.", this._name);
