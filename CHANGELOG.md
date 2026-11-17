@@ -1,3 +1,10 @@
+## [4.0.3](https://github.com/droidsolutions/amqp-ts/compare/v4.0.2...v4.0.3) (2026-11-17)
+
+
+### Bug Fixes
+
+* declare an exclusive queue again that is still locked after a reconnect ([deb9aee](https://github.com/droidsolutions/amqp-ts/commit/deb9aeeb17e383e239ba8f965601d074a9e36ff4))
+
 ## [4.0.2](https://github.com/droidsolutions/amqp-ts/compare/v4.0.1...v4.0.2) (2026-11-12)
 
 
