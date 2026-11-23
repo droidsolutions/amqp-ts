@@ -45,7 +45,7 @@ jobs:
     runs-on: [ubuntu-latest]
     strategy:
       matrix:
-        node: [ '22', '24' ]
+        node: [ '22', '24', '26' ]
     services:
       rabbitmq:
         image: rabbitmq:4.2-management-alpine
@@ -95,7 +95,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26 # semantic-release 26 needs Node >= 26.13
       - run: npm ci --ignore-scripts
       - name: Verify the integrity of provenance attestations and registry signatures for installed dependencies
         run: npm audit signatures
