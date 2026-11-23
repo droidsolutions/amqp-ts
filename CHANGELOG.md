@@ -1,3 +1,10 @@
+## [4.0.4](https://github.com/droidsolutions/amqp-ts/compare/v4.0.3...v4.0.4) (2026-11-23)
+
+### Bug Fixes
+
+* **deps:** bump amqplib from 2.3.1 to 2.4.0 ([7eb17f6](https://github.com/droidsolutions/amqp-ts/commit/7eb17f69d90cb8832fd83ec2f4b7ff9c7b8926ab))
+* **deps:** require amqplib 2.4.0 or newer ([8134c71](https://github.com/droidsolutions/amqp-ts/commit/8134c7114e60a980d8129a340bab8dbcdd5ed912))
+
 ## [4.0.3](https://github.com/droidsolutions/amqp-ts/compare/v4.0.2...v4.0.3) (2026-11-17)
 
 
